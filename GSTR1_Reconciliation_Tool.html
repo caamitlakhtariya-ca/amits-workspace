@@ -878,7 +878,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       '4. GSTR-1 TABS COVERED — b2b, exp (outward supplies); cdnr, cdnur (credit/debit notes); b2ba, expa, cdnra, cdnura (amendments).',
       '5. AMENDMENT HANDLING — If an amended row\'s Original Invoice/Note No. is found among this year\'s own b2b/exp/cdnr/cdnur rows, the original is REMOVED and replaced by the amended figures. If not found (prior financial year), the amendment is kept standalone and flagged as not reconcilable against the current year\'s Sales Register.',
       '6. CDNR/CDNUR SIGN — Driven strictly by the DOCUMENT TYPE column: C = Credit Note (flipped negative); D = Debit Note (kept positive). Both are stated positive in the raw GSTR-1 export.',
-      '7. TABS IN THIS WORKBOOK — Dashboard | Config & Instructions | Net Sales Register | GSTR-1 Register | Match Detail | Exceptions.'
+      '7. TABS IN THIS WORKBOOK — Dashboard | Config & Instructions | Net Sales Register | GSTR-1 Register | Match Detail | Mismatch Action | Exceptions.',
+      '8. MISMATCH ACTION TAB — Every invoice from Match Detail whose values disagree beyond the tolerance is repeated on the "Mismatch Action" tab, sorted by largest difference first, with the offending head(s) named in the "Mismatch In" column and highlighted red. Use the blank "Action Taken" and "Remarks" columns to record how each difference was resolved.'
     ];
     var r = 4;
     instructions.forEach(function (line) {
@@ -1020,7 +1021,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // ============================= MATCH DETAIL =============================
     var md = wb.addWorksheet('Match Detail');
     styleTitle(md.getCell('A1'), 'Invoice-Level Match — Net Sales Register vs GSTR-1 Register');
-    styleSub(md.getCell('A2'), 'Matched by normalized Bill No / Invoice-Note No. Yellow rows = value mismatch, needs review.');
+    styleSub(md.getCell('A2'), 'Matched by normalized Bill No / Invoice-Note No. Yellow rows = value mismatch — these are repeated on the "Mismatch Action" tab with action columns.');
     var mdHeaders = ['Bill No', 'Date', 'Party', 'Voucher Type', 'GSTR-1 Tab(s)', 'Tally Inv Val', 'GSTR1 Inv Val', 'Diff',
       'Tally Taxable', 'GSTR1 Taxable', 'Diff', 'Tally IGST', 'GSTR1 IGST', 'Diff', 'Tally CGST', 'GSTR1 CGST', 'Diff',
       'Tally SGST', 'GSTR1 SGST', 'Diff', 'Status'];
@@ -1048,6 +1049,74 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     md.columns = [16, 11, 26, 12, 12, 13, 13, 10, 13, 13, 10, 12, 12, 9, 12, 12, 9, 12, 12, 9, 14].map(function (w) { return { width: w }; });
     md.views = [{ state: 'frozen', ySplit: mdHr, showGridLines: false }];
     md.autoFilter = { from: { row: mdHr, column: 1 }, to: { row: mdLast, column: 21 } };
+
+    // ============================= MISMATCH ACTION =============================
+    // Only the Value Mismatch rows from Match Detail, pulled out into a working
+    // sheet: shows WHICH head(s) disagree, sorted worst-first, with blank
+    // Action Taken / Remarks columns for the reviewer to fill in.
+    var TOL = opts.tolerance || 2.0;
+    var mm = wb.addWorksheet('Mismatch Action', { properties: { tabColor: { argb: GOLD } } });
+    styleTitle(mm.getCell('A1'), 'Value Mismatches — Action Sheet (' + mismatches.length + ' invoice' + (mismatches.length === 1 ? '' : 's') + ')');
+    styleSub(mm.getCell('A2'), 'Invoices matched by Bill No but with Tally vs GSTR-1 differences beyond the Rs ' + TOL + ' tolerance. Red cells = the head(s) causing the mismatch. Sorted by largest difference first. Fill "Action Taken" and "Remarks" as you resolve each row.');
+    var mmHeaders = ['Bill No', 'Date', 'Party', 'Voucher Type', 'GSTR-1 Tab(s)', 'Mismatch In',
+      'Tally Inv Val', 'GSTR1 Inv Val', 'Diff', 'Tally Taxable', 'GSTR1 Taxable', 'Diff',
+      'Tally IGST', 'GSTR1 IGST', 'Diff', 'Tally CGST', 'GSTR1 CGST', 'Diff',
+      'Tally SGST', 'GSTR1 SGST', 'Diff', 'Total Tax Diff', 'Action Taken', 'Remarks'];
+    var mmHr = 4;
+    mmHeaders.forEach(function (h, i) { var c = mm.getCell(mmHr, i + 1); c.value = h; styleHeader(c); });
+    var mmHeads = [
+      { name: 'Invoice Value', diff: 'D_Inv', diffCol: 9 },
+      { name: 'Taxable Value', diff: 'D_Tax', diffCol: 12 },
+      { name: 'IGST', diff: 'D_I', diffCol: 15 },
+      { name: 'CGST', diff: 'D_C', diffCol: 18 },
+      { name: 'SGST', diff: 'D_S', diffCol: 21 }
+    ];
+    function mmWorst(m) {
+      return Math.max.apply(null, mmHeads.map(function (h) { return Math.abs(m[h.diff] || 0); }));
+    }
+    var mmSorted = mismatches.slice().sort(function (a, b) {
+      var d = mmWorst(b) - mmWorst(a);
+      return d !== 0 ? d : String(a.BillNo).localeCompare(String(b.BillNo));
+    });
+    r = mmHr + 1;
+    var mmFirst = r;
+    mmSorted.forEach(function (m) {
+      var badHeads = mmHeads.filter(function (h) { return Math.abs(m[h.diff] || 0) > TOL; });
+      var totalTaxDiff = Math.round(((m.D_I || 0) + (m.D_C || 0) + (m.D_S || 0)) * 100) / 100;
+      var vals = [m.BillNo, m.Date ? String(m.Date).slice(0, 10) : '', m.Party, m.VoucherType, m.GSTR1Tab,
+        badHeads.map(function (h) { return h.name; }).join(', '),
+        m.T_Inv, m.G_Inv, m.D_Inv, m.T_Tax, m.G_Tax, m.D_Tax, m.T_I, m.G_I, m.D_I,
+        m.T_C, m.G_C, m.D_C, m.T_S, m.G_S, m.D_S, totalTaxDiff, '', ''];
+      vals.forEach(function (v, i) {
+        var cell = mm.getCell(r, i + 1);
+        cell.value = v; cell.font = { name: 'Arial', size: 10 }; cell.border = thinBorder();
+        if (i + 1 >= 7 && i + 1 <= 22) cell.numFmt = NUMFMT;
+      });
+      badHeads.forEach(function (h) {
+        var cell = mm.getCell(r, h.diffCol);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: REDLIGHT } };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: RED } };
+      });
+      mm.getCell(r, 23).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUTFILL } };
+      mm.getCell(r, 24).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUTFILL } };
+      r++;
+    });
+    if (mmSorted.length) {
+      var mmLast = r - 1;
+      mm.getCell(r, 3).value = 'Total'; mm.getCell(r, 3).font = { name: 'Arial', size: 10, bold: true };
+      [9, 12, 15, 18, 21, 22].forEach(function (cIdx) {
+        var colLetter = mm.getColumn(cIdx).letter;
+        var c = mm.getCell(r, cIdx);
+        c.value = { formula: 'SUM(' + colLetter + mmFirst + ':' + colLetter + mmLast + ')' };
+        c.numFmt = NUMFMT; c.font = { name: 'Arial', size: 10, bold: true }; c.border = thinBorder();
+      });
+      mm.autoFilter = { from: { row: mmHr, column: 1 }, to: { row: mmLast, column: 24 } };
+    } else {
+      mm.getCell(r, 1).value = 'None - every matched invoice agrees with GSTR-1 within the Rs ' + TOL + ' tolerance. No action required.';
+      mm.getCell(r, 1).font = { name: 'Arial', size: 10, italic: true, color: { argb: GREEN } };
+    }
+    mm.columns = [16, 11, 26, 12, 12, 28, 13, 13, 11, 13, 13, 11, 12, 12, 10, 12, 12, 10, 12, 12, 10, 13, 22, 34].map(function (w) { return { width: w }; });
+    mm.views = [{ state: 'frozen', ySplit: mmHr, showGridLines: false }];
 
     // ============================= EXCEPTIONS =============================
     var ex = wb.addWorksheet('Exceptions');
@@ -1379,7 +1448,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       dn: state.dnFile ? state.dnFile.name : null, gstr1: state.gstr1File.name
     };
     logLine('Building Excel workbook...');
-    var wb = GSTRBuilder.buildWorkbook({ tallyRows: tallyRows, gstr1Rows: gstr1Rows, matchResult: matchResult, taxMap: taxMap, clientInfo: clientInfo, fileInfo: fileInfo });
+    var wb = GSTRBuilder.buildWorkbook({ tallyRows: tallyRows, gstr1Rows: gstr1Rows, matchResult: matchResult, taxMap: taxMap, clientInfo: clientInfo, fileInfo: fileInfo, tolerance: 2.0 });
 
     wb.xlsx.writeBuffer().then(function (buffer) {
       var blob = new Blob([buffer], { type: 'application/octet-stream' });
