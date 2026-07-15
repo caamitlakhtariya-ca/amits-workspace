@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MSME 45-Day &amp; Section 43B(h) Analyzer — Pradip B. Gandhi &amp; Co. LLP</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<style>
+  :root{
+    --navy:#1F3864;
+    --navy-dark:#152647;
+    --blue-light:#DCE6F1;
+    --amber:#FFEB9C;
+    --amber-text:#9C6500;
+    --red:#FFC7CE;
+    --red-text:#9C0006;
+    --green:#C6EFCE;
+    --green-text:#006100;
+    --ink:#1c2733;
+    --muted:#6b7684;
+    --border:#dfe4ea;
+    --bg:#f4f6f9;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:Arial, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink);
+  }
+  header{
+    background:linear-gradient(135deg, var(--navy) 0%, var(--navy-dark) 100%);
+    color:#fff; padding:28px 36px;
+  }
+  header h1{margin:0 0 4px 0; font-size:22px; font-weight:700;}
+  header p{margin:0; font-size:13px; color:#cdd8ea;}
+  .wrap{max-width:1080px; margin:0 auto; padding:28px 20px 60px;}
+  .card{
+    background:#fff; border:1px solid var(--border); border-radius:10px;
+    padding:24px; margin-bottom:20px; box-shadow:0 1px 2px rgba(16,24,40,0.04);
+  }
+  .card h2{margin:0 0 4px 0; font-size:15px; color:var(--navy); font-weight:700;}
+  .card .sub{margin:0 0 16px 0; font-size:12.5px; color:var(--muted);}
+  .drop{
+    border:2px dashed #b7c2d0; border-radius:8px; padding:32px; text-align:center;
+    cursor:pointer; transition:.15s; background:#fbfcfe;
+  }
+  .drop.drag{ border-color:var(--navy); background:var(--blue-light); }
+  .drop.has-file{ border-color:#2e7d32; background:#f1f8f2; }
+  .drop input{display:none;}
+  .drop .icon{font-size:28px; margin-bottom:8px;}
+  .drop .filename{font-weight:700; color:var(--navy); margin-top:6px; font-size:13px;}
+  .row{display:flex; gap:16px; flex-wrap:wrap; margin-top:16px;}
+  .field{flex:1; min-width:220px;}
+  .field label{display:block; font-size:12px; font-weight:700; color:var(--ink); margin-bottom:6px;}
+  .field .hint{font-size:11px; color:var(--muted); margin-top:4px;}
+  input[type=date], input[type=number], select{
+    width:100%; padding:9px 10px; border:1px solid var(--border); border-radius:6px;
+    font-size:13px; font-family:inherit; background:#fff;
+  }
+  .toggle-group{display:flex; border:1px solid var(--border); border-radius:6px; overflow:hidden;}
+  .toggle-group button{
+    flex:1; padding:9px 8px; border:none; background:#fff; cursor:pointer; font-size:12.5px;
+    font-family:inherit; color:var(--muted); border-right:1px solid var(--border);
+  }
+  .toggle-group button:last-child{border-right:none;}
+  .toggle-group button.active{background:var(--navy); color:#fff; font-weight:700;}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; background:var(--navy); color:#fff; border:none;
+    padding:12px 22px; border-radius:7px; font-size:14px; font-weight:700; cursor:pointer;
+    font-family:inherit; transition:.15s;
+  }
+  .btn:hover{background:var(--navy-dark);}
+  .btn:disabled{background:#b7c2d0; cursor:not-allowed;}
+  .btn.secondary{background:#fff; color:var(--navy); border:1.5px solid var(--navy);}
+  .btn.secondary:hover{background:var(--blue-light);}
+  .actions{display:flex; align-items:center; gap:14px; margin-top:20px;}
+  #status{font-size:12.5px; color:var(--muted);}
+  #log{
+    font-family:"SF Mono", Consolas, monospace; font-size:11.5px; background:#0f1b2d; color:#a9d6ff;
+    border-radius:8px; padding:14px 16px; max-height:220px; overflow-y:auto; display:none; margin-top:16px;
+    line-height:1.6;
+  }
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(210px,1fr)); gap:14px; margin-top:6px;}
+  .stat{
+    border:1px solid var(--border); border-radius:8px; padding:16px; background:#fbfcfe;
+  }
+  .stat .n{font-size:22px; font-weight:800; color:var(--navy);}
+  .stat.red .n{color:var(--red-text);}
+  .stat.amber .n{color:var(--amber-text);}
+  .stat.green .n{color:var(--green-text);}
+  .stat .l{font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.4;}
+  .footnote{font-size:11.5px; color:var(--muted); line-height:1.6; margin-top:18px; border-top:1px dashed var(--border); padding-top:14px;}
+  .footnote b{color:var(--ink);}
+  .badge{
+    display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:20px;
+    background:var(--blue-light); color:var(--navy); margin-left:8px; vertical-align:middle;
+  }
+  .hidden{display:none;}
+  a.download-link{
+    display:inline-flex; align-items:center; gap:8px; background:#1e7e34; color:#fff; text-decoration:none;
+    padding:12px 22px; border-radius:7px; font-size:14px; font-weight:700;
+  }
+  a.download-link:hover{background:#166529;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MSME 45-Day &amp; Section 43B(h) Analyzer <span class="badge">v1.0</span></h1>
+  <p>Upload a Tally creditor ledger export → get the full FIFO-matched delay / disallowance workbook, in-browser, nothing uploaded anywhere.</p>
+</header>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2>0. Staff Instructions — Exporting the Tally Ledger</h2>
+    <p class="sub">Give this to whoever pulls the export — get it wrong and the FIFO matching breaks.</p>
+    <ol style="margin:0; padding-left:20px; font-size:13px; line-height:1.9; color:var(--ink);">
+      <li>Export the <strong>Creditors Ledger</strong> from <em>Gateway of Tally → Display → Account Books → Group Summary/Ledger</em> — select the <strong>"Sundry Creditors"</strong> Group of Accounts.</li>
+      <li><strong>Condensed mode will do</strong> — full voucher-level detail is not required.</li>
+      <li>The export <strong>must include the running Balance column</strong> for each ledger — this is essential for FIFO matching.</li>
+      <li>Include the current year's data <strong>at least till 45 days into next year</strong> (e.g. 15‑05‑2026 for a 31‑03‑2026 year-end) — this lets the tool check whether invoices were actually paid within 45 days, not just their position on the year-end date.</li>
+      <li>Export as a single <strong>.xlsx</strong> file with all ledgers one after another — Tally's default multi-ledger export format. Don't split into separate files per creditor.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>1. Upload Tally Ledger Export</h2>
+    <p class="sub">Gateway of Tally → Display → Account Books → Ledger → select all Sundry Creditors → Export as XLSX. One sheet, multiple "Ledger:" blocks — the same format Tally produces by default.</p>
+    <label class="drop" id="drop">
+      <input type="file" id="fileInput" accept=".xlsx,.xls">
+      <div class="icon">📄</div>
+      <div><strong>Click to browse</strong> or drag a .xlsx file here</div>
+      <div class="filename" id="filename"></div>
+    </label>
+  </div>
+
+  <div class="card">
+    <h2>2. Confirm the Two Cut-off Dates</h2>
+    <p class="sub">Auto-detected from your file where possible — override if needed.</p>
+    <div class="row">
+      <div class="field">
+        <label>Financial Year-End Date (the "as on" date for disallowance)</label>
+        <input type="date" id="fyEnd" value="2026-03-31">
+        <div class="hint">Invoices dated after this are ignored entirely. Outstanding balances are struck as on this date.</div>
+      </div>
+      <div class="field">
+        <label>Data Available Through (last date in your Tally export)</label>
+        <input type="date" id="horizon" value="2026-06-30">
+        <div class="hint">Payments after year-end, up to this date, are used to check if the 45-day window was ultimately met.</div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Treat "Debit Note" entries as</label>
+        <div class="toggle-group" id="dnToggle">
+          <button type="button" data-val="reduce" class="active">Reduction (as they appear in the ledger's Debit column)</button>
+          <button type="button" data-val="invoice">Additional invoice (override column)</button>
+        </div>
+        <div class="hint">Default follows the ledger column — Debit Notes appearing in the Debit column reduce the oldest open invoice, same as a payment.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="actions">
+      <button class="btn" id="runBtn" disabled>▶ Run FIFO Analysis</button>
+      <span id="status">Upload a file to begin</span>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <div class="card hidden" id="resultsCard">
+    <h2>3. Results</h2>
+    <p class="sub">All figures computed client-side from your file. Cross-check Sheet E against your Tally control totals before relying on this for filing.</p>
+    <div class="stat-grid" id="statGrid"></div>
+    <div class="actions">
+      <a href="#" class="download-link" id="downloadLink">⬇ Download Excel Report</a>
+      <button class="btn secondary" id="resetBtn">Analyze another file</button>
+    </div>
+    <div class="footnote">
+      <b>Before you finish:</b> open the <b>Classification</b> sheet in the downloaded workbook and set each creditor to
+      Micro/Small, Medium, Non-MSME, or Trader — Sheets B, D, G and the "LIVE" figures on the Summary sheet recalculate
+      automatically from that one dropdown column, no need to re-run this tool. Section 43B(h) and Sec 16 interest only
+      apply to Micro/Small suppliers. The interest rate on Sheet G (default 18% p.a., approximating 3x Bank Rate) is
+      also editable there.
+    </div>
+    <div class="footnote">
+      <b>Reminder:</b> this report covers ALL creditors in the file until you classify them — cross-check against your
+      Udyam/MSME registration records. See the Summary and Notes sheet inside the workbook for full assumptions.
+    </div>
+  </div>
+
+</div>
+
+<footer style="text-align:center; padding:24px 20px 40px; font-size:11.5px; color:var(--muted);">
+  Developed by <strong style="color:var(--navy);">CA Amit N. Lakhtariya</strong> (M. No. 117820) — Pradip B. Gandhi &amp; Co. LLP, Chartered Accountants · FRN 118674W/W101002 · www.caahmedabad.com
+</footer>
+
+<script>
+/* ================= MSME 45-Day / Section 43B(h) FIFO Engine =================
+   Direct JS port of the Python engine validated in chat. Pure functions, no I/O.
+================================================================================ */
+
+function daysBetween(a, b) {
+  // a, b are JS Date objects (date-only, midnight local)
+  return Math.round((b - a) / 86400000);
+}
+
+function toDateOnly(d) {
+  if (!(d instanceof Date) || isNaN(d)) return null;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/* ---------- 1. Parse raw sheet rows into per-ledger transaction lists ---------- */
+function parseLedgers(rows) {
+  // rows: array of arrays, each row up to 8 columns (A..H), as read by SheetJS with cellDates:true
+  const ledgerStartIdx = [];
+  rows.forEach((r, i) => { if (r[0] === 'Ledger:') ledgerStartIdx.push(i); });
+  ledgerStartIdx.push(rows.length);
+
+  const ledgers = {}; // name -> { txns: [...], closingCr, closingDr }
+  for (let li = 0; li < ledgerStartIdx.length - 1; li++) {
+    const start = ledgerStartIdx[li];
+    const end = ledgerStartIdx[li + 1];
+    const name = rows[start][1];
+    const block = rows.slice(start + 2, end);
+    const txns = [];
+    let closingCr = 0, closingDr = 0;
+
+    for (const r of block) {
+      const dRaw = r[0];
+      const d = toDateOnly(dRaw instanceof Date ? dRaw : null);
+      if (!d) {
+        // possible "Closing Balance" row: col0 blank, col1 By/To, col2 'Closing Balance'
+        if (r[1] === 'By' && r[2] === 'Closing Balance') closingCr = Number(r[6]) || 0;
+        if (r[1] === 'To' && r[2] === 'Closing Balance') closingDr = Number(r[5]) || 0;
+        continue;
+      }
+      if (r[1] !== 'By' && r[1] !== 'To') continue;
+      txns.push({
+        date: d,
+        drcr: r[1],
+        particulars: r[2] || '',
+        vchType: r[3] || '',
+        vchNo: r[4] != null ? String(r[4]) : '',
+        debit: Number(r[5]) || 0,
+        credit: Number(r[6]) || 0,
+      });
+    }
+    txns.sort((a, b) => a.date - b.date);
+    ledgers[name] = { txns, closingCr, closingDr };
+  }
+  return ledgers;
+}
+
+/* ---------- 2. Core FIFO engine: run through 30-06 horizon, snapshot at FY-end ----------
+   Returns: { delayRows, outstandingRows, reconciliation }
+   - delayRows: every FIFO allocation (invoice creation/advance-adjust/payment), across the WHOLE horizon
+   - outstandingRows: TRUE ledger position as at fyEndDate (before any post-cutoff payment is netted)
+*/
+function runFifoEngine(ledgers, fyEndDate, horizonDate, debitNoteMode) {
+  const delayRows = [];
+  const outstandingRows = [];
+  let computedCloseCr = 0, computedCloseDr = 0;
+  let tallyCloseCr = 0, tallyCloseDr = 0;
+
+  for (const credName in ledgers) {
+    const { txns, closingCr, closingDr } = ledgers[credName];
+    tallyCloseCr += closingCr;
+    tallyCloseDr += closingDr;
+
+    let advanceBalance = 0;
+    let queue = [];
+    let invUid = 0;
+    let snapshotTaken = false;
+    let snapshotQueue = null, snapshotAdvance = null;
+
+    const takeSnapshot = () => ({
+      queue: queue.map(inv => ({ ...inv })),
+      advance: advanceBalance,
+    });
+
+    for (const t of txns) {
+      const d = t.date;
+
+      if (!snapshotTaken && d > fyEndDate) {
+        const snap = takeSnapshot();
+        snapshotQueue = snap.queue; snapshotAdvance = snap.advance;
+        snapshotTaken = true;
+      }
+
+      // Determine effective side, honoring Debit Note override if requested
+      const isDebitNote = t.vchType && t.vchType.trim().toLowerCase() === 'debit note';
+      let effSide = t.credit > 0 ? 'credit' : (t.debit > 0 ? 'debit' : null);
+      if (debitNoteMode === 'invoice' && isDebitNote && t.debit > 0) {
+        // override: treat this Debit Note as an invoice-creating (credit-like) event
+        effSide = 'credit_override';
+      }
+
+      if (effSide === 'credit' || effSide === 'credit_override') {
+        let amt = effSide === 'credit_override' ? t.debit : t.credit;
+        const origAmt = amt;
+        if (advanceBalance > 1e-6) {
+          const consumed = Math.min(advanceBalance, amt);
+          advanceBalance -= consumed;
+          amt -= consumed;
+          if (consumed > 0.005) {
+            delayRows.push({
+              creditor: credName, invDate: d, invVchNo: t.vchNo, invVchType: t.vchType,
+              invParticulars: t.particulars, invAmount: origAmt,
+              payDate: d, payVchNo: '(Adjusted vs Advance)', payVchType: 'Advance Adjustment',
+              payParticulars: '', allocAmt: consumed, daysTaken: 0, delayOver45: 0,
+              period: (d >= fyStartOf(fyEndDate) && d <= fyEndDate) ? 'FY' : (d > fyEndDate ? 'AFTER' : 'BEFORE'),
+            });
+          }
+        }
+        if (amt > 0.005 && d <= fyEndDate) {
+          invUid++;
+          queue.push({ uid: invUid, date: d, vchNo: t.vchNo, vchType: t.vchType, particulars: t.particulars, amount: amt, paidAmt: 0, origAmt });
+        }
+        // invoices dated after fyEndDate are ignored entirely
+      } else if (effSide === 'debit') {
+        let payAmt = t.debit;
+        const payDate = d;
+        while (payAmt > 0.005 && queue.length) {
+          const inv = queue[0];
+          const outstandingAmt = inv.amount - inv.paidAmt;
+          const alloc = Math.min(outstandingAmt, payAmt);
+          inv.paidAmt += alloc;
+          payAmt -= alloc;
+          const daysTaken = daysBetween(inv.date, payDate);
+          const delay = Math.max(0, daysTaken - 45);
+          const period = (payDate >= fyStartOf(fyEndDate) && payDate <= fyEndDate) ? 'FY' : (payDate > fyEndDate ? 'AFTER' : 'BEFORE');
+          delayRows.push({
+            creditor: credName, invDate: inv.date, invVchNo: inv.vchNo, invVchType: inv.vchType,
+            invParticulars: inv.particulars, invAmount: inv.origAmt,
+            payDate, payVchNo: t.vchNo, payVchType: t.vchType, payParticulars: t.particulars,
+            allocAmt: alloc, daysTaken, delayOver45: delay, period,
+          });
+          if (inv.paidAmt >= inv.amount - 0.005) queue.shift();
+        }
+        if (payAmt > 0.005) advanceBalance += payAmt;
+      }
+    }
+
+    if (!snapshotTaken) {
+      const snap = takeSnapshot();
+      snapshotQueue = snap.queue; snapshotAdvance = snap.advance;
+    }
+
+    computedCloseCr += snapshotQueue.reduce((s, inv) => s + (inv.amount - inv.paidAmt), 0);
+    computedCloseDr += snapshotAdvance;
+
+    for (const inv of snapshotQueue) {
+      const osAtCutoff = inv.amount - inv.paidAmt;
+      if (osAtCutoff <= 0.005) continue;
+      const daysOs = daysBetween(inv.date, fyEndDate);
+
+      let paidAfter = 0, lastPayDate = null;
+      for (const r of delayRows) {
+        if (r.creditor === credName && r.invVchNo === inv.vchNo && +r.invDate === +inv.date && r.payDate > fyEndDate) {
+          paidAfter += r.allocAmt;
+          if (!lastPayDate || r.payDate > lastPayDate) lastPayDate = r.payDate;
+        }
+      }
+      outstandingRows.push({
+        creditor: credName, invDate: inv.date, invVchNo: inv.vchNo, invVchType: inv.vchType,
+        invParticulars: inv.particulars, invAmount: inv.origAmt,
+        paidTillFyEnd: inv.paidAmt, osAtFyEnd: osAtCutoff, daysOsAtFyEnd: daysOs,
+        exceeds45AtFyEnd: daysOs > 45 ? 'YES' : 'NO',
+        paidAfterFyEnd: paidAfter, lastPayDateAfterFyEnd: lastPayDate,
+        stillOsAtHorizon: osAtCutoff - paidAfter,
+      });
+    }
+  }
+
+  return {
+    delayRows, outstandingRows,
+    reconciliation: { computedCloseCr, computedCloseDr, tallyCloseCr, tallyCloseDr },
+  };
+}
+
+function fyStartOf(fyEndDate) {
+  // FY start = 1-Apr of the year that makes fyEndDate the following 31-Mar
+  const y = fyEndDate.getMonth() >= 3 ? fyEndDate.getFullYear() : fyEndDate.getFullYear() - 1;
+  return new Date(y, 3, 1); // April = month 3
+}
+
+/* ---------- 3. Section 43B(h) disallowance test, tracked through the full horizon ---------- */
+function compute43bh(delayRows, outstandingRows, fyEndDate, horizonDate) {
+  const results = [];
+  for (const inv of outstandingRows) {
+    const key = { c: inv.creditor, v: inv.invVchNo, d: +inv.invDate };
+    const allocsAfter = delayRows.filter(r =>
+      r.creditor === key.c && r.invVchNo === key.v && +r.invDate === key.d && r.payDate > fyEndDate);
+
+    const disallowedPaidLate = allocsAfter.filter(r => r.daysTaken > 45).reduce((s, r) => s + r.allocAmt, 0);
+    const allowedPaidOnTime = allocsAfter.filter(r => r.daysTaken <= 45).reduce((s, r) => s + r.allocAmt, 0);
+    const totalPaidAfter = disallowedPaidLate + allowedPaidOnTime;
+    const stillUnpaid = inv.osAtFyEnd - totalPaidAfter;
+
+    const daysByHorizon = daysBetween(inv.invDate, horizonDate);
+    const windowExpiredByHorizon = daysByHorizon > 45;
+
+    let disallowedUnpaid = 0, pendingAmt = 0, statusUnpaid = '';
+    if (stillUnpaid > 0.005 && windowExpiredByHorizon) {
+      disallowedUnpaid = stillUnpaid;
+      statusUnpaid = 'DISALLOWED - unpaid & 45-day window already lapsed (per data available)';
+    } else if (stillUnpaid > 0.005) {
+      pendingAmt = stillUnpaid;
+      statusUnpaid = 'PENDING - still unpaid, 45-day window not yet lapsed by data horizon; recheck later';
+    }
+
+    const totalDisallowed = disallowedPaidLate + disallowedUnpaid;
+    let status;
+    if (totalDisallowed > 0.005) status = 'DISALLOWED';
+    else if (pendingAmt > 0.005) status = 'PENDING (monitor)';
+    else status = 'NOT DISALLOWED - paid within 45 days';
+
+    const lastPayDate = allocsAfter.length ? allocsAfter.reduce((m, r) => (!m || r.payDate > m) ? r.payDate : m, null) : null;
+
+    results.push({
+      ...inv,
+      paidAfterOnTime: allowedPaidOnTime,
+      paidAfterLate: disallowedPaidLate,
+      stillUnpaidAtHorizon: stillUnpaid,
+      stillUnpaidStatus: statusUnpaid,
+      totalDisallowed,
+      pendingAmt,
+      status,
+      lastPayDate,
+    });
+  }
+  return results;
+}
+
+/* ---------- 4. Full FIFO audit trail (every event, chronological, running balance) ---------- */
+function buildAuditTrail(ledgers, fyEndDate, horizonDate, debitNoteMode) {
+  const trail = [];
+  let seq = 0;
+
+  for (const credName in ledgers) {
+    const { txns } = ledgers[credName];
+    let advanceBalance = 0;
+    let queue = [];
+    let invUid = 0;
+
+    for (const t of txns) {
+      const d = t.date;
+      const isDebitNote = t.vchType && t.vchType.trim().toLowerCase() === 'debit note';
+      let effSide = t.credit > 0 ? 'credit' : (t.debit > 0 ? 'debit' : null);
+      if (debitNoteMode === 'invoice' && isDebitNote && t.debit > 0) effSide = 'credit_override';
+
+      if (effSide === 'credit' || effSide === 'credit_override') {
+        let amt = effSide === 'credit_override' ? t.debit : t.credit;
+        const origAmt = amt;
+        if (advanceBalance > 1e-6) {
+          const consumed = Math.min(advanceBalance, amt);
+          advanceBalance -= consumed;
+          amt -= consumed;
+          if (consumed > 0.005) {
+            seq++;
+            trail.push({
+              seq, creditor: credName, invDate: d, invVchNo: t.vchNo, invVchType: t.vchType,
+              invParticulars: t.particulars, invAmount: origAmt,
+              eventType: 'Advance Adjustment', eventDate: d, eventVchNo: '(Opening/Prior Advance)',
+              eventVchType: 'Advance Adjustment', eventParticulars: 'Adjusted against opening/carried-forward advance',
+              allocAmt: consumed, daysFromInvoice: 0, balanceAfter: (amt <= 0.005 ? origAmt - consumed : null),
+            });
+          }
+        }
+        if (amt > 0.005 && d <= fyEndDate) {
+          invUid++;
+          queue.push({ uid: invUid, date: d, vchNo: t.vchNo, vchType: t.vchType, particulars: t.particulars, amount: amt, paidAmt: 0, origAmt });
+          seq++;
+          trail.push({
+            seq, creditor: credName, invDate: d, invVchNo: t.vchNo, invVchType: t.vchType,
+            invParticulars: t.particulars, invAmount: origAmt,
+            eventType: 'Invoice Raised', eventDate: d, eventVchNo: t.vchNo, eventVchType: t.vchType,
+            eventParticulars: 'New invoice added to FIFO queue' + (origAmt !== amt ? ' (net of advance adjustment)' : ''),
+            allocAmt: amt, daysFromInvoice: 0, balanceAfter: amt,
+          });
+        }
+      } else if (effSide === 'debit') {
+        let payAmt = t.debit;
+        const payDate = d;
+        while (payAmt > 0.005 && queue.length) {
+          const inv = queue[0];
+          const outstandingAmt = inv.amount - inv.paidAmt;
+          const alloc = Math.min(outstandingAmt, payAmt);
+          inv.paidAmt += alloc;
+          payAmt -= alloc;
+          const daysTaken = daysBetween(inv.date, payDate);
+          const balAfter = inv.amount - inv.paidAmt;
+          seq++;
+          trail.push({
+            seq, creditor: credName, invDate: inv.date, invVchNo: inv.vchNo, invVchType: inv.vchType,
+            invParticulars: inv.particulars, invAmount: inv.origAmt,
+            eventType: 'Payment Allocated', eventDate: payDate, eventVchNo: t.vchNo, eventVchType: t.vchType,
+            eventParticulars: t.particulars, allocAmt: alloc, daysFromInvoice: daysTaken, balanceAfter: balAfter,
+          });
+          if (inv.paidAmt >= inv.amount - 0.005) queue.shift();
+        }
+        if (payAmt > 0.005) {
+          advanceBalance += payAmt;
+          seq++;
+          trail.push({
+            seq, creditor: credName, invDate: null, invVchNo: null, invVchType: null,
+            invParticulars: '(No open invoice - becomes advance)', invAmount: null,
+            eventType: 'Excess Payment -> Advance', eventDate: payDate, eventVchNo: t.vchNo, eventVchType: t.vchType,
+            eventParticulars: t.particulars, allocAmt: payAmt, daysFromInvoice: null, balanceAfter: null,
+          });
+        }
+      }
+    }
+
+    for (const inv of queue) {
+      const bal = inv.amount - inv.paidAmt;
+      if (bal > 0.005) {
+        const daysByHorizon = daysBetween(inv.date, horizonDate);
+        seq++;
+        trail.push({
+          seq, creditor: credName, invDate: inv.date, invVchNo: inv.vchNo, invVchType: inv.vchType,
+          invParticulars: inv.particulars, invAmount: inv.origAmt,
+          eventType: 'STILL UNPAID as on data horizon', eventDate: horizonDate, eventVchNo: '-', eventVchType: '-',
+          eventParticulars: `No further payment found in data (${daysByHorizon} days elapsed since invoice)`,
+          allocAmt: 0, daysFromInvoice: daysByHorizon, balanceAfter: bal,
+        });
+      }
+    }
+  }
+  return trail;
+}
+
+
+/* ================= Workbook builder (ExcelJS) =================
+   Mirrors the 6-sheet structure validated in chat: Summary, A (Interest Exposure),
+   B (43B(h) Disallowance), C (All Outstanding), D (Creditor Summary),
+   E (Reconciliation), F (Full FIFO Audit Trail).
+================================================================= */
+
+const NAVY = 'FF1F3864';
+const RED = 'FFFFC7CE'; const RED_TEXT = 'FF9C0006';
+const AMBER = 'FFFFEB9C'; const AMBER_TEXT = 'FF9C6500';
+const GREEN = 'FFC6EFCE'; const GREEN_TEXT = 'FF006100';
+const BLUE_LIGHT = 'FFDCE6F1';
+const FONT = 'Arial';
+
+function styleHeaderRow(ws, rowNum, ncols) {
+  const row = ws.getRow(rowNum);
+  for (let c = 1; c <= ncols; c++) {
+    const cell = row.getCell(c);
+    cell.font = { name: FONT, bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = thinBorder();
+  }
+  row.commit();
+}
+
+function thinBorder() {
+  const s = { style: 'thin', color: { argb: 'FFBFBFBF' } };
+  return { top: s, left: s, right: s, bottom: s };
+}
+
+function fillCell(cell, argb) {
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+}
+
+function autosize(ws, ncols, minW = 10, maxW = 45) {
+  for (let c = 1; c <= ncols; c++) {
+    let maxLen = 0;
+    ws.getColumn(c).eachCell({ includeEmpty: false }, cell => {
+      const v = cell.value;
+      if (v != null) maxLen = Math.max(maxLen, String(v).length);
+    });
+    ws.getColumn(c).width = Math.min(Math.max(maxLen + 2, minW), maxW);
+  }
+}
+
+function banner(ws, text, color = NAVY, size = 12) {
+  const cell = ws.getCell('B2');
+  cell.value = text;
+  cell.font = { name: FONT, bold: true, size, color: { argb: color } };
+}
+
+async function buildWorkbook(engineResult, cfg) {
+  const { ledgers, fyEndDate, horizonDate, debitNoteMode } = cfg;
+  const { delayRows, outstandingRows, reconciliation } = engineResult;
+  const results43bh = engineResult.results43bh;
+  const auditTrail = engineResult.auditTrail;
+
+  const fyStart = fyStartOf(fyEndDate);
+  const fyLabel = `FY ${fyStart.getFullYear()}-${String(fyEndDate.getFullYear()).slice(2)}`;
+  const fyEndStr = fyEndDate.toLocaleDateString('en-GB').replace(/\//g, '-');
+  const horizonStr = horizonDate.toLocaleDateString('en-GB').replace(/\//g, '-');
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'CA Amit N. Lakhtariya, Pradip B. Gandhi & Co. LLP, Chartered Accountants';
+  wb.lastModifiedBy = 'CA Amit N. Lakhtariya, Pradip B. Gandhi & Co. LLP';
+  wb.company = 'Pradip B. Gandhi & Co. LLP, Chartered Accountants (www.caahmedabad.com)';
+  wb.title = 'MSME 45-Day & Section 43B(h) Analysis';
+  wb.subject = 'MSME/43B(h) Payment Delay Analysis';
+  wb.keywords = 'MSME, 43B(h), Tally, FIFO';
+  wb.created = new Date();
+  wb.calcProperties.fullCalcOnLoad = true;
+
+  const allLateRows = delayRows.filter(r => r.delayOver45 > 0); // interest exposure - ANY payment date
+  const fyPayments = delayRows.filter(r => r.period === 'FY');
+  const afterFyPayments = delayRows.filter(r => r.period === 'AFTER');
+  const disallowed = results43bh.filter(r => r.status === 'DISALLOWED');
+  const pending = results43bh.filter(r => r.status === 'PENDING (monitor)');
+  const totalDisallowedAmt = disallowed.reduce((s, r) => s + r.totalDisallowed, 0);
+  const totalPendingAmt = pending.reduce((s, r) => s + r.pendingAmt, 0);
+  const totalCr = outstandingRows.reduce((s, r) => s + r.osAtFyEnd, 0);
+
+  // Precompute where Sheet B's and Sheet G's live classification-driven totals will land,
+  // so the Summary sheet can reference them with LIVE formulas (sheets are built later in this function,
+  // but row numbers are fully deterministic from data lengths known now).
+  const wsBLiveTotalRef = `'B. Disallowance u_s 43B(h)'!S${5 + 1 + results43bh.length + 2}`;
+  const wsGLiveTotalRef = `'G. Interest Calculation'!L${5 + 1 + allLateRows.length}`;
+
+  /* ============ SHEET 1: Summary ============ */
+  const ws1 = wb.addWorksheet('Summary');
+  ws1.views = [{ showGridLines: false }];
+  ws1.getCell('B2').value = 'MSME / Section 43B(h) — Payment Delay Analysis';
+  ws1.getCell('B2').font = { name: FONT, bold: true, size: 14, color: { argb: NAVY } };
+  ws1.getCell('B3').value = `Based on Tally creditor ledgers, FIFO invoice-payment matching. FY-end: ${fyEndStr} | Data through: ${horizonStr}`;
+  ws1.getCell('B3').font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+  ws1.getCell('B4').value = 'Verify Udyam/MSME registration status separately before applying disallowance — this report covers ALL creditors.';
+  ws1.getCell('B4').font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+
+  ws1.getCell('B6').value = 'TWO SEPARATE OBJECTIVES — see dedicated sheets:';
+  ws1.getCell('B6').font = { name: FONT, bold: true, size: 10 };
+  ws1.getCell('B7').value = "  Objective 1 -> Sheet 'A. Interest Exposure Paid Late': invoices PAID (any date, through data horizon) beyond 45 days from invoice date -> interest exposure u/s 16 MSMED Act. NOT restricted to the FY - interest runs until actual payment date regardless of financial year.";
+  ws1.getCell('B7').alignment = { wrapText: true };
+  ws1.getCell('B8').value = "  Objective 2 -> Sheet 'B. Disallowance u_s 43B(h)': invoices where actual (or, if unpaid, projected-to-date) payment exceeds 45 days from invoice date -> income-tax disallowance u/s 43B(h). Tested using full data through the horizon date, NOT just the FY-end snapshot.";
+  ws1.getCell('B8').alignment = { wrapText: true };
+  ws1.getCell('B9').value = "  Working paper -> Sheet 'F. Full FIFO Audit Trail': every invoice raised, advance adjustment, and payment allocation for ALL creditors, chronological, with running balances.";
+  ws1.getCell('B9').alignment = { wrapText: true };
+
+  const stats = [
+    ['Total creditor ledgers processed', Object.keys(ledgers).length],
+    ['', ''],
+    [`OBJECTIVE 1 — Interest exposure u/s 16 MSMED Act (any payment date)`, ''],
+    ['Total invoice-payment allocations actually paid (through data horizon)', fyPayments.length + afterFyPayments.length],
+    ['...of which paid AFTER 45 days of invoice date (interest exposure)', allLateRows.length],
+    ['Amount paid late, any payment date (Rs.)', allLateRows.reduce((s, r) => s + r.allocAmt, 0)],
+    [`   -- of which payment fell within ${fyLabel} itself`, allLateRows.filter(r => r.period === 'FY').reduce((s, r) => s + r.allocAmt, 0)],
+    [`   -- of which payment fell after ${fyEndStr}`, allLateRows.filter(r => r.period !== 'FY').reduce((s, r) => s + r.allocAmt, 0)],
+    ['', ''],
+    ['OBJECTIVE 2 — Disallowance u/s 43B(h) (tested through data horizon, not just FY-end)', ''],
+    [`Total invoices outstanding (any age) as on ${fyEndStr}`, outstandingRows.length],
+    [`Total outstanding amount as on ${fyEndStr} (Rs.) [tie to Tally Cr total]`, totalCr],
+    [`Invoices confirmed DISALLOWED u/s 43B(h) for ${fyLabel} (count)`, disallowed.length],
+    [`Amount DISALLOWED u/s 43B(h) for ${fyLabel} (Rs.)`, totalDisallowedAmt],
+    ['Invoices PENDING confirmation (45-day window not yet lapsed by data horizon)', pending.length],
+    ['Amount at risk, pending confirmation (Rs.)', totalPendingAmt],
+    ['', ''],
+    ['LIVE FIGURES — update automatically when you classify creditors on the Classification sheet:', ''],
+    [`Amount DISALLOWED u/s 43B(h) — Micro/Small only, per Classification sheet (Rs.)`, { formula: wsBLiveTotalRef }],
+    [`Interest payable u/s 16 MSMED Act — Micro/Small only, per Classification sheet (Rs.)`, { formula: wsGLiveTotalRef }],
+    ['', ''],
+    [`Advance (debit) balances carried as on ${fyEndStr} across ledgers (Rs.)`, reconciliation.computedCloseDr],
+  ];
+  let r0 = 11;
+  stats.forEach(([label, val], i) => {
+    const rr = r0 + i;
+    if (label === '' && val === '') return;
+    if (val === '' && label !== '') {
+      ws1.getCell(`B${rr}`).value = label;
+      ws1.getCell(`B${rr}`).font = { name: FONT, bold: true, size: 10 };
+      return;
+    }
+    ws1.getCell(`B${rr}`).value = label;
+    ws1.getCell(`B${rr}`).font = { name: FONT, size: 10 };
+    const c = ws1.getCell(`C${rr}`);
+    if (val && typeof val === 'object' && val.formula) {
+      c.value = val;
+      c.font = { name: FONT, bold: true, size: 11, color: { argb: RED_TEXT } };
+      c.numFmt = '#,##0.00';
+      ws1.getCell(`B${rr}`).font = { name: FONT, bold: true, size: 10, color: { argb: RED_TEXT } };
+    } else {
+      c.value = val;
+      c.font = { name: FONT, bold: true, size: 10 };
+      if (typeof val === 'number') c.numFmt = '#,##0.00';
+    }
+    c.alignment = { horizontal: 'right' };
+  });
+  ws1.getColumn('A').width = 3;
+  ws1.getColumn('B').width = 76;
+  ws1.getColumn('C').width = 18;
+
+  const notesRow = r0 + stats.length + 3;
+  const notes = [
+    'Notes & Assumptions:',
+    `1. Objective 2 (Sheet B) tests EVERY invoice outstanding as on ${fyEndStr} against its actual subsequent payment date (or, if still unpaid, against ${horizonStr}) — NOT merely whether 45 days had elapsed by ${fyEndStr}.`,
+    `2. 'PENDING (monitor)' applies only where an invoice is still unpaid AND its 45-day window has NOT lapsed even by ${horizonStr} — recheck with fresher data closer to return filing.`,
+    `3. If an invoice is paid in FULL within ${fyLabel} itself, even after 45 days, it is NOT disallowed under 43B(h) (deduction only shifts to year of actual payment). It still carries interest exposure under Sec 16 MSMED Act — see Sheet A.`,
+    `4. Sheet C is the TRUE ledger position as at ${fyEndStr}, computed using only transactions dated on or before that date — cross-check against your Tally closing balances in Sheet E.`,
+    `5. Invoices dated after ${fyEndStr} are excluded entirely from this analysis.`,
+    '6. FIFO: each payment/journal debit/credit note is applied against the oldest outstanding invoice(s) first.',
+    "7. Opening Debit (advance) balance is adjusted against the first invoice(s) raised thereafter (0-day 'Advance Adjustment'). Opening Credit (payable) balance is treated as an invoice dated at FY start for ageing — true underlying invoice date may be earlier, understating delay.",
+    "8. 'Debit Note' entries are treated as: " + (debitNoteMode === 'invoice' ? 'ADDITIONAL INVOICES (override applied)' : 'REDUCTIONS, following the ledger column (default)') + " — change this in the tool's configuration before re-running if needed.",
+    '9. Classify every creditor on the "Classification" sheet (Non-MSME / Trader / Medium / Micro or Small) — only Micro or Small triggers 43B(h) disallowance and Sec 16 interest. Sheets B, D, G and the LIVE figures above recalculate automatically the moment you change a classification. Traders and Non-MSME suppliers are outside MSMED Act coverage regardless of size.',
+  ];
+  notes.forEach((n, i) => {
+    const cell = ws1.getCell(`B${notesRow + i}`);
+    cell.value = n;
+    cell.font = i === 0 ? { name: FONT, bold: true, size: 10 } : { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+    cell.alignment = { wrapText: true };
+  });
+
+  const instrRow = notesRow + notes.length + 3;
+  ws1.getCell(`B${instrRow}`).value = 'Instructions for staff — exporting the Tally ledger for this tool:';
+  ws1.getCell(`B${instrRow}`).font = { name: FONT, bold: true, size: 10 };
+  const instructions = [
+    '1. Export the Creditors Ledger from Gateway of Tally -> Display -> Account Books -> Group Summary/Ledger -> select the "Sundry Creditors" Group of Accounts.',
+    '2. Condensed mode is sufficient — full voucher-level detail is not required.',
+    '3. The export MUST include the running Balance column for each ledger (essential for FIFO matching).',
+    `4. Include the current year's data at least till ${horizonStr} (45 days into next year) — this lets the disallowance test check whether invoices were actually paid within 45 days, not just their position on ${fyEndStr}.`,
+    '5. Export as XLSX, one sheet, all ledgers one after another (Tally\'s default multi-ledger export format) — do not split into separate files per creditor.',
+  ];
+  instructions.forEach((n, i) => {
+    const cell = ws1.getCell(`B${instrRow + 1 + i}`);
+    cell.value = n;
+    cell.font = { name: FONT, size: 9.5, color: { argb: 'FF1F3864' } };
+    cell.alignment = { wrapText: true };
+  });
+
+  const brandRow = instrRow + instructions.length + 3;
+  ws1.getCell(`B${brandRow}`).value = '________________________________________________';
+  ws1.getCell(`B${brandRow}`).font = { name: FONT, size: 9, color: { argb: 'FFBFBFBF' } };
+  ws1.getCell(`B${brandRow + 1}`).value = 'Developed by CA Amit N. Lakhtariya (M. No. 117820)';
+  ws1.getCell(`B${brandRow + 1}`).font = { name: FONT, bold: true, size: 10, color: { argb: NAVY } };
+  ws1.getCell(`B${brandRow + 2}`).value = 'Pradip B. Gandhi & Co. LLP, Chartered Accountants  |  FRN: 118674W/W101002  |  www.caahmedabad.com';
+  ws1.getCell(`B${brandRow + 2}`).font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+  ws1.getCell(`B${brandRow + 3}`).value = 'This tool and its underlying logic are proprietary work product — please do not redistribute outside the firm without permission.';
+  ws1.getCell(`B${brandRow + 3}`).font = { name: FONT, italic: true, size: 8.5, color: { argb: 'FFA0A0A0' } };
+  ws1.getCell(`B${brandRow + 3}`).alignment = { wrapText: true };
+
+  /* ============ SHEET: Classification (drives Sheets B, D, G, Summary) ============ */
+  const wsX = wb.addWorksheet('Classification');
+  banner(wsX, 'CLASSIFY EACH CREDITOR — the whole workbook (Disallowance, Interest, Creditor Summary, Summary) updates automatically from this sheet');
+  wsX.getCell('B3').value = "Only 'Micro or Small (MSME)' triggers Section 43B(h) disallowance and Section 16 interest. Traders and Non-MSME suppliers, and Medium enterprises, are NOT covered by the MSMED Act — set those accordingly and every downstream sheet recalculates.";
+  wsX.getCell('B3').font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+  wsX.getCell('B3').alignment = { wrapText: true };
+  const CLASS_OPTIONS = ['Not Classified', 'Micro or Small (MSME)', 'Medium (MSME)', 'Non-MSME', 'Trader'];
+  const colsX = ['Creditor', 'MSME Classification', 'Udyam Registration No. (optional)'];
+  const hdrX = 5;
+  colsX.forEach((h, i) => wsX.getCell(hdrX, i + 1).value = h);
+  styleHeaderRow(wsX, hdrX, colsX.length);
+  wsX.views = [{ state: 'frozen', ySplit: hdrX }];
+  wsX.autoFilter = { from: { row: hdrX, column: 1 }, to: { row: hdrX, column: colsX.length } };
+  const allCreditorNames = Object.keys(ledgers).sort((a, b) => a.localeCompare(b));
+  allCreditorNames.forEach((cred, idx) => {
+    const ri = hdrX + 1 + idx;
+    const c1 = wsX.getCell(ri, 1); c1.value = cred; c1.font = { name: FONT, size: 10 }; c1.border = thinBorder();
+    const c2 = wsX.getCell(ri, 2); c2.value = 'Not Classified'; c2.font = { name: FONT, size: 10 }; c2.border = thinBorder();
+    c2.dataValidation = { type: 'list', allowBlank: false, formulae: [`"${CLASS_OPTIONS.join(',')}"`], showErrorMessage: true, errorTitle: 'Invalid entry', error: 'Pick a value from the dropdown.' };
+    fillCell(c2, 'FFFFF2CC');
+    const c3 = wsX.getCell(ri, 3); c3.value = ''; c3.font = { name: FONT, size: 10 }; c3.border = thinBorder();
+  });
+  autosize(wsX, colsX.length, 20, 45);
+  const classLastRow = hdrX + allCreditorNames.length;
+  const classRange = `Classification!$A$${hdrX + 1}:$B$${classLastRow}`;
+
+  /* ============ SHEET A: Interest Exposure ============ */
+  const wsA = wb.addWorksheet('A. Interest Exposure Paid Late');
+  banner(wsA, `OBJECTIVE 1: Invoices PAID beyond 45 days from invoice date -> Interest exposure u/s 16, MSMED Act (any payment date)`);
+  wsA.getCell('B3').value = 'Interest runs from due date to actual payment date regardless of financial year — includes payments made after year-end too (see Payment Period column). Separate test from 43B(h) — the same invoice can appear in both Sheet A and Sheet B.';
+  wsA.getCell('B3').font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+  wsA.getCell('B3').alignment = { wrapText: true };
+  const colsA = ['Creditor', 'Invoice Date', 'Invoice Vch No', 'Invoice Vch Type', 'Invoice Particulars',
+    'Invoice Amount', 'Payment Date', 'Payment Vch No', 'Payment Vch Type', 'Payment Particulars',
+    'Allocated Amount', 'Days Taken', 'Delay Beyond 45 Days', 'Payment Period'];
+  const hdrA = 5;
+  colsA.forEach((h, i) => wsA.getCell(hdrA, i + 1).value = h);
+  styleHeaderRow(wsA, hdrA, colsA.length);
+  wsA.views = [{ state: 'frozen', ySplit: hdrA }];
+  wsA.autoFilter = { from: { row: hdrA, column: 1 }, to: { row: hdrA, column: colsA.length } };
+  const dataA = [...allLateRows].sort((a, b) => b.delayOver45 - a.delayOver45 || a.creditor.localeCompare(b.creditor));
+  dataA.forEach((r, idx) => {
+    const ri = hdrA + 1 + idx;
+    const paymentPeriod = r.period === 'FY' ? fyLabel : `After ${fyEndStr}`;
+    const vals = [r.creditor, r.invDate, r.invVchNo, r.invVchType, r.invParticulars, r.invAmount,
+      r.payDate, r.payVchNo, r.payVchType, r.payParticulars, r.allocAmt, r.daysTaken, r.delayOver45, paymentPeriod];
+    vals.forEach((v, ci) => {
+      const cell = wsA.getCell(ri, ci + 1);
+      cell.value = v;
+      cell.font = { name: FONT, size: 10 };
+      cell.border = thinBorder();
+      if (ci === 1 || ci === 6) cell.numFmt = 'dd-mmm-yyyy';
+      if (ci === 5 || ci === 10) cell.numFmt = '#,##0.00';
+    });
+    const fill = r.period === 'FY' ? AMBER : RED;
+    for (let c = 1; c <= colsA.length; c++) fillCell(wsA.getCell(ri, c), fill);
+  });
+  autosize(wsA, colsA.length);
+
+  /* ============ SHEET G: Automatic Interest Calculation (Sec 16, MSMED Act) ============ */
+  const wsG = wb.addWorksheet('G. Interest Calculation');
+  banner(wsG, 'AUTOMATIC INTEREST CALCULATION on delayed payments — u/s 16, MSMED Act (compound interest at 3x Bank Rate)');
+  wsG.getCell('B3').value = 'Interest is calculated only for creditors classified as "Micro or Small (MSME)" in the Classification sheet. Change the rate below or reclassify a creditor and every row recalculates automatically.';
+  wsG.getCell('B3').font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+  wsG.getCell('B3').alignment = { wrapText: true };
+  wsG.getCell('E2').value = 'Interest Rate (% p.a.) — default approximates 3x Bank Rate per Sec 16 MSMED Act, EDIT AS NEEDED:';
+  wsG.getCell('E2').font = { name: FONT, bold: true, size: 10 };
+  wsG.getCell('E2').alignment = { horizontal: 'right', wrapText: true };
+  const rateCell = wsG.getCell('F2');
+  rateCell.value = 18;
+  rateCell.font = { name: FONT, bold: true, size: 12, color: { argb: 'FF0000FF' } };
+  fillCell(rateCell, 'FFFFF2CC');
+  rateCell.numFmt = '0.0"%"';
+  rateCell.border = thinBorder();
+  const rateRef = `'G. Interest Calculation'!$F$2`;
+
+  const colsG = ['Creditor', 'Invoice Date', 'Invoice Vch No', 'Invoice Particulars', 'Invoice Amount',
+    'Payment Date', 'Days Taken', 'Days Delayed (Beyond 45)', 'Allocated Amount (Rs.)',
+    'MSME Classification', 'Interest Applicable?', 'Interest Amount (Rs.)'];
+  const hdrG = 5;
+  colsG.forEach((h, i) => wsG.getCell(hdrG, i + 1).value = h);
+  styleHeaderRow(wsG, hdrG, colsG.length);
+  wsG.views = [{ state: 'frozen', ySplit: hdrG }];
+  wsG.autoFilter = { from: { row: hdrG, column: 1 }, to: { row: hdrG, column: colsG.length } };
+  const dataG = [...allLateRows].sort((a, b) => b.delayOver45 - a.delayOver45);
+  dataG.forEach((r, idx) => {
+    const ri = hdrG + 1 + idx;
+    const vals = [r.creditor, r.invDate, r.invVchNo, r.invParticulars, r.invAmount, r.payDate, r.daysTaken, r.delayOver45, r.allocAmt];
+    vals.forEach((v, ci) => {
+      const cell = wsG.getCell(ri, ci + 1);
+      cell.value = v;
+      cell.font = { name: FONT, size: 10 };
+      cell.border = thinBorder();
+      if (ci === 1 || ci === 5) cell.numFmt = 'dd-mmm-yyyy';
+      if (ci === 4 || ci === 8) cell.numFmt = '#,##0.00';
+    });
+    const clsCell = wsG.getCell(ri, 10);
+    clsCell.value = { formula: `IFERROR(VLOOKUP(A${ri},${classRange},2,FALSE),"Not Classified")` };
+    clsCell.font = { name: FONT, size: 10 }; clsCell.border = thinBorder();
+    const appCell = wsG.getCell(ri, 11);
+    appCell.value = { formula: `IF(J${ri}="Micro or Small (MSME)","YES","NO")` };
+    appCell.font = { name: FONT, size: 10 }; appCell.border = thinBorder();
+    const intCell = wsG.getCell(ri, 12);
+    intCell.value = { formula: `IF(K${ri}="YES",I${ri}*(${rateRef}/100)*(H${ri}/365),0)` };
+    intCell.font = { name: FONT, size: 10 }; intCell.border = thinBorder(); intCell.numFmt = '#,##0.00';
+    const fill = r.period === 'FY' ? AMBER : RED;
+    for (let c = 1; c <= 9; c++) fillCell(wsG.getCell(ri, c), fill);
+  });
+  const totRowG = hdrG + 1 + dataG.length;
+  const firstDataRowG = hdrG + 1;
+  const lastDataRowG = hdrG + dataG.length;
+  wsG.getCell(totRowG, 4).value = 'TOTAL INTEREST PAYABLE — MICRO/SMALL ONLY (per Classification sheet, LIVE)';
+  wsG.getCell(totRowG, 4).font = { name: FONT, bold: true, size: 11, color: { argb: RED_TEXT } };
+  const gTotal = wsG.getCell(totRowG, 12);
+  gTotal.value = { formula: `SUM(L${firstDataRowG}:L${lastDataRowG})` };
+  gTotal.font = { name: FONT, bold: true, size: 11, color: { argb: RED_TEXT } };
+  gTotal.numFmt = '#,##0.00';
+  autosize(wsG, colsG.length);
+  wsG.getColumn(4).width = 30;
+  const wsGTotalCellRef = `'G. Interest Calculation'!L${totRowG}`;
+  const wsGRangeCreditor = `'G. Interest Calculation'!$A$${firstDataRowG}:$A$${lastDataRowG}`;
+  const wsGRangeInterest = `'G. Interest Calculation'!$L$${firstDataRowG}:$L$${lastDataRowG}`;
+
+  /* ============ SHEET B: Disallowance u/s 43B(h) ============ */
+  const wsB = wb.addWorksheet('B. Disallowance u_s 43B(h)');
+  banner(wsB, `OBJECTIVE 2: Disallowance u/s 43B(h) - tested using actual/projected payment date, not just position as on ${fyEndStr}`, RED_TEXT);
+  wsB.getCell('B3').value = `Tested against data through ${horizonStr}. DISALLOWED = paid beyond 45 days after ${fyEndStr}, or still unpaid with the window already lapsed. PENDING = still unpaid but window not yet lapsed (recheck later).`;
+  wsB.getCell('B3').font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+  wsB.getCell('B3').alignment = { wrapText: true };
+  const colsB = ['Creditor', 'Invoice Date', 'Invoice Vch No', 'Invoice Vch Type', 'Invoice Particulars',
+    'Invoice Amount', `Amount Paid Till ${fyEndStr}`, `Outstanding Amount as on ${fyEndStr}`,
+    `Days Outstanding as on ${fyEndStr}`, `Paid After ${fyEndStr} - within 45 days (not disallowed)`,
+    `Paid After ${fyEndStr} - beyond 45 days (DISALLOWED)`, `Still Unpaid as on ${horizonStr}`,
+    'Still-Unpaid Status', `Last Payment Date (if after ${fyEndStr})`,
+    `Total Disallowable u/s 43B(h) for ${fyLabel} (Rs.)`, 'Amount Pending Confirmation', '43B(h) Status',
+    'MSME Classification', 'Disallowed - Applicable Only, per Classification (Rs.)'];
+  const hdrB = 5;
+  colsB.forEach((h, i) => wsB.getCell(hdrB, i + 1).value = h);
+  styleHeaderRow(wsB, hdrB, colsB.length);
+  wsB.views = [{ state: 'frozen', ySplit: hdrB }];
+  wsB.autoFilter = { from: { row: hdrB, column: 1 }, to: { row: hdrB, column: colsB.length } };
+  const dataB = [...results43bh].sort((a, b) => {
+    const rank = s => s === 'DISALLOWED' ? 0 : (s === 'PENDING (monitor)' ? 1 : 2);
+    return rank(a.status) - rank(b.status) || b.totalDisallowed - a.totalDisallowed;
+  });
+  dataB.forEach((r, idx) => {
+    const ri = hdrB + 1 + idx;
+    const vals = [r.creditor, r.invDate, r.invVchNo, r.invVchType, r.invParticulars, r.invAmount,
+      r.paidTillFyEnd, r.osAtFyEnd, r.daysOsAtFyEnd, r.paidAfterOnTime, r.paidAfterLate,
+      r.stillUnpaidAtHorizon, r.stillUnpaidStatus, r.lastPayDate, r.totalDisallowed, r.pendingAmt, r.status];
+    vals.forEach((v, ci) => {
+      const cell = wsB.getCell(ri, ci + 1);
+      cell.value = v;
+      cell.font = { name: FONT, size: 10 };
+      cell.border = thinBorder();
+      if (ci === 1 || ci === 13) cell.numFmt = 'dd-mmm-yyyy';
+      if ([5, 6, 7, 9, 10, 11, 14, 15].includes(ci)) cell.numFmt = '#,##0.00';
+    });
+    // MSME Classification lookup (col 18) and applicable-only disallowance (col 19), both live formulas
+    const clsCell = wsB.getCell(ri, 18);
+    clsCell.value = { formula: `IFERROR(VLOOKUP(A${ri},${classRange},2,FALSE),"Not Classified")` };
+    clsCell.font = { name: FONT, size: 10 };
+    clsCell.border = thinBorder();
+    const appCell = wsB.getCell(ri, 19);
+    appCell.value = { formula: `IF(R${ri}="Micro or Small (MSME)",O${ri},0)` };
+    appCell.font = { name: FONT, size: 10 };
+    appCell.border = thinBorder();
+    appCell.numFmt = '#,##0.00';
+    const fill = r.status === 'DISALLOWED' ? RED : (r.status === 'PENDING (monitor)' ? AMBER : GREEN);
+    for (let c = 1; c <= colsB.length; c++) fillCell(wsB.getCell(ri, c), fill);
+  });
+  const totRow = hdrB + 1 + dataB.length;
+  const firstDataRow = hdrB + 1;
+  const lastDataRow = hdrB + dataB.length;
+  wsB.getCell(totRow, 5).value = 'TOTAL DISALLOWED (before classification filter, all creditors)';
+  wsB.getCell(totRow, 5).font = { name: FONT, bold: true, size: 10 };
+  const tc = wsB.getCell(totRow, 15);
+  tc.value = { formula: `SUM(O${firstDataRow}:O${lastDataRow})` };
+  tc.font = { name: FONT, bold: true, size: 10 }; tc.numFmt = '#,##0.00';
+  wsB.getCell(totRow + 1, 5).value = 'TOTAL PENDING (at risk)';
+  wsB.getCell(totRow + 1, 5).font = { name: FONT, bold: true, size: 10 };
+  const tc2 = wsB.getCell(totRow + 1, 16);
+  tc2.value = { formula: `SUM(P${firstDataRow}:P${lastDataRow})` };
+  tc2.font = { name: FONT, bold: true, size: 10 }; tc2.numFmt = '#,##0.00';
+  wsB.getCell(totRow + 2, 5).value = 'TOTAL DISALLOWED — MICRO/SMALL ONLY (per Classification sheet, LIVE)';
+  wsB.getCell(totRow + 2, 5).font = { name: FONT, bold: true, size: 11, color: { argb: RED_TEXT } };
+  const tc3 = wsB.getCell(totRow + 2, 19);
+  tc3.value = { formula: `SUM(S${firstDataRow}:S${lastDataRow})` };
+  tc3.font = { name: FONT, bold: true, size: 11, color: { argb: RED_TEXT } }; tc3.numFmt = '#,##0.00';
+  autosize(wsB, colsB.length);
+  const wsBTotalCellRef = `'B. Disallowance u_s 43B(h)'!S${totRow + 2}`;
+
+  /* ============ SHEET C: All Outstanding (reference) ============ */
+  const wsC = wb.addWorksheet('C. All Outstanding');
+  banner(wsC, `REFERENCE ONLY: ALL invoices outstanding as on ${fyEndStr} (raw snapshot — use Sheet B for the real 43B(h) test)`);
+  const colsC = ['Creditor', 'Invoice Date', 'Invoice Vch No', 'Invoice Vch Type', 'Invoice Particulars',
+    'Invoice Amount', `Amount Paid Till ${fyEndStr}`, `Outstanding as on ${fyEndStr}`,
+    `Days Outstanding as on ${fyEndStr}`, 'Exceeds 45 Days (FY-end snapshot only)',
+    `Paid After ${fyEndStr} (till ${horizonStr})`, `Last Payment Date (if after ${fyEndStr})`,
+    `Still Outstanding as on ${horizonStr}`];
+  const hdrC = 5;
+  colsC.forEach((h, i) => wsC.getCell(hdrC, i + 1).value = h);
+  styleHeaderRow(wsC, hdrC, colsC.length);
+  wsC.views = [{ state: 'frozen', ySplit: hdrC }];
+  wsC.autoFilter = { from: { row: hdrC, column: 1 }, to: { row: hdrC, column: colsC.length } };
+  const dataC = [...outstandingRows].sort((a, b) => b.daysOsAtFyEnd - a.daysOsAtFyEnd);
+  dataC.forEach((r, idx) => {
+    const ri = hdrC + 1 + idx;
+    const vals = [r.creditor, r.invDate, r.invVchNo, r.invVchType, r.invParticulars, r.invAmount,
+      r.paidTillFyEnd, r.osAtFyEnd, r.daysOsAtFyEnd, r.exceeds45AtFyEnd, r.paidAfterFyEnd,
+      r.lastPayDateAfterFyEnd, r.stillOsAtHorizon];
+    vals.forEach((v, ci) => {
+      const cell = wsC.getCell(ri, ci + 1);
+      cell.value = v;
+      cell.font = { name: FONT, size: 10 };
+      cell.border = thinBorder();
+      if (ci === 1 || ci === 11) cell.numFmt = 'dd-mmm-yyyy';
+      if ([5, 6, 7, 10, 12].includes(ci)) cell.numFmt = '#,##0.00';
+    });
+  });
+  autosize(wsC, colsC.length);
+
+  /* ============ SHEET D: Creditor-wise Summary ============ */
+  const wsD = wb.addWorksheet('D. Creditor-wise Summary');
+  const colsD = ['Creditor', 'Total Payments Made (Count, any date)', 'Payments Delayed >45 Days (Count, any date)',
+    'Interest-Exposed Amount, any payment date (Rs.)', 'Max Delay (Days)', `Total Outstanding as on ${fyEndStr} (Rs.)`,
+    'Disallowable u_s 43B(h) - before classification (Rs.)', 'Pending Confirmation (Rs.)',
+    'MSME Classification', 'Disallowable — Applicable Only (Rs.)', 'Interest Payable — Applicable Only (Rs.)'];
+  colsD.forEach((h, i) => wsD.getCell(1, i + 1).value = h);
+  styleHeaderRow(wsD, 1, colsD.length);
+  wsD.views = [{ state: 'frozen', ySplit: 1 }];
+  wsD.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: colsD.length } };
+
+  const allPaid = [...fyPayments, ...afterFyPayments];
+  const byCred = {};
+  allPaid.forEach(r => {
+    byCred[r.creditor] = byCred[r.creditor] || { cnt: 0, delayedCnt: 0, delayedAmt: 0, maxDelay: 0 };
+    const d = byCred[r.creditor];
+    d.cnt++;
+    if (r.delayOver45 > 0) { d.delayedCnt++; d.delayedAmt += r.allocAmt; d.maxDelay = Math.max(d.maxDelay, r.daysTaken); }
+  });
+  const osByCred = {};
+  outstandingRows.forEach(r => { osByCred[r.creditor] = (osByCred[r.creditor] || 0) + r.osAtFyEnd; });
+  const disByCred = {};
+  results43bh.forEach(r => {
+    disByCred[r.creditor] = disByCred[r.creditor] || { disallowed: 0, pending: 0 };
+    disByCred[r.creditor].disallowed += r.totalDisallowed;
+    disByCred[r.creditor].pending += r.pendingAmt;
+  });
+  const allCreditors = Array.from(new Set([...Object.keys(byCred), ...Object.keys(osByCred)]))
+    .sort((a, b) => ((disByCred[b]?.disallowed || 0) + (byCred[b]?.delayedAmt || 0)) - ((disByCred[a]?.disallowed || 0) + (byCred[a]?.delayedAmt || 0)));
+  let riD = 2;
+  allCreditors.forEach(cred => {
+    const d = byCred[cred] || { cnt: 0, delayedCnt: 0, delayedAmt: 0, maxDelay: 0 };
+    const osAmt = osByCred[cred] || 0;
+    const dis = disByCred[cred] || { disallowed: 0, pending: 0 };
+    if (d.cnt === 0 && osAmt === 0) return;
+    const vals = [cred, d.cnt, d.delayedCnt, d.delayedAmt, d.maxDelay, osAmt, dis.disallowed, dis.pending];
+    vals.forEach((v, ci) => {
+      const cell = wsD.getCell(riD, ci + 1);
+      cell.value = v;
+      cell.font = { name: FONT, size: 10 };
+      cell.border = thinBorder();
+      if ([3, 5, 6, 7].includes(ci)) cell.numFmt = '#,##0.00';
+    });
+    const clsCell = wsD.getCell(riD, 9);
+    clsCell.value = { formula: `IFERROR(VLOOKUP(A${riD},${classRange},2,FALSE),"Not Classified")` };
+    clsCell.font = { name: FONT, size: 10 }; clsCell.border = thinBorder();
+    const appDisCell = wsD.getCell(riD, 10);
+    appDisCell.value = { formula: `IF(I${riD}="Micro or Small (MSME)",G${riD},0)` };
+    appDisCell.font = { name: FONT, size: 10 }; appDisCell.border = thinBorder(); appDisCell.numFmt = '#,##0.00';
+    const appIntCell = wsD.getCell(riD, 11);
+    appIntCell.value = { formula: `SUMIF(${wsGRangeCreditor},A${riD},${wsGRangeInterest})` };
+    appIntCell.font = { name: FONT, size: 10 }; appIntCell.border = thinBorder(); appIntCell.numFmt = '#,##0.00';
+    const fill = dis.disallowed > 0 ? RED : (d.delayedCnt > 0 ? AMBER : null);
+    if (fill) for (let c = 1; c <= colsD.length; c++) fillCell(wsD.getCell(riD, c), fill);
+    riD++;
+  });
+  autosize(wsD, colsD.length);
+
+  /* ============ SHEET E: Closing Balance Reconciliation ============ */
+  const wsE = wb.addWorksheet('E. Closing Bal Reconciliation');
+  wsE.views = [{ showGridLines: false }];
+  wsE.getCell('B2').value = `Reconciliation of computed ${fyEndStr} position to your Tally control totals`;
+  wsE.getCell('B2').font = { name: FONT, bold: true, size: 10 };
+  wsE.getCell('B3').value = "'Per file' figures are summed only from ledgers whose export explicitly prints a 'Closing Balance' line — many Tally exports omit this per-ledger, so a 0 here doesn't mean a mismatch. Compare 'Computed' against your own known control totals.";
+  wsE.getCell('B3').font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+  wsE.getCell('B3').alignment = { wrapText: true };
+  const rowsE = [
+    [`Total Credit (payable) balances as on ${fyEndStr} — COMPUTED`, reconciliation.computedCloseCr],
+    [`Total Credit (payable) balances — per 'Closing Balance' lines found in file`, reconciliation.tallyCloseCr],
+    ['Difference', reconciliation.computedCloseCr - reconciliation.tallyCloseCr],
+    ['', ''],
+    [`Total Debit (advance) balances as on ${fyEndStr} — COMPUTED`, reconciliation.computedCloseDr],
+    [`Total Debit (advance) balances — per 'Closing Balance' lines found in file`, reconciliation.tallyCloseDr],
+    ['Difference', reconciliation.computedCloseDr - reconciliation.tallyCloseDr],
+  ];
+  rowsE.forEach(([label, val], i) => {
+    const rr = 5 + i;
+    if (label === '') return;
+    wsE.getCell(`B${rr}`).value = label;
+    wsE.getCell(`B${rr}`).font = { name: FONT, size: 10 };
+    const c = wsE.getCell(`C${rr}`);
+    c.value = val;
+    c.font = { name: FONT, bold: true, size: 10 };
+    c.numFmt = '#,##0.00';
+  });
+  wsE.getColumn('B').width = 62;
+  wsE.getColumn('C').width = 18;
+
+  /* ============ SHEET F: Full FIFO Audit Trail ============ */
+  const wsF = wb.addWorksheet('F. Full FIFO Audit Trail');
+  banner(wsF, 'FULL FIFO AUDIT TRAIL - every invoice raised, advance adjustment, and payment allocation, in chronological order');
+  wsF.getCell('B3').value = "One row per event. 'Balance After' tracks each invoice's running balance through its full lifecycle. Filter by Creditor / Invoice Vch No to trace any single invoice end-to-end.";
+  wsF.getCell('B3').font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
+  wsF.getCell('B3').alignment = { wrapText: true };
+  const colsF = ['Seq', 'Creditor', 'Invoice Date', 'Invoice Vch No', 'Invoice Vch Type', 'Invoice Particulars', 'Invoice Amount',
+    'Event Type', 'Event Date', 'Days From Invoice To Event', 'Event Vch No', 'Event Vch Type', 'Event Particulars',
+    'Amount Allocated', 'Balance Outstanding After Event'];
+  const hdrF = 5;
+  colsF.forEach((h, i) => wsF.getCell(hdrF, i + 1).value = h);
+  styleHeaderRow(wsF, hdrF, colsF.length);
+  wsF.views = [{ state: 'frozen', xSplit: 2, ySplit: hdrF }];
+  wsF.autoFilter = { from: { row: hdrF, column: 1 }, to: { row: hdrF, column: colsF.length } };
+  const dataF = [...auditTrail].sort((a, b) => a.creditor.localeCompare(b.creditor) || a.seq - b.seq);
+  const EVENT_FILL = {
+    'Invoice Raised': BLUE_LIGHT,
+    'Advance Adjustment': GREEN,
+    'Excess Payment -> Advance': GREEN,
+    'STILL UNPAID as on data horizon': RED,
+  };
+  dataF.forEach((r, idx) => {
+    const ri = hdrF + 1 + idx;
+    const vals = [r.seq, r.creditor, r.invDate, r.invVchNo, r.invVchType, r.invParticulars, r.invAmount,
+      r.eventType, r.eventDate, r.daysFromInvoice, r.eventVchNo, r.eventVchType, r.eventParticulars,
+      r.allocAmt, r.balanceAfter];
+    vals.forEach((v, ci) => {
+      const cell = wsF.getCell(ri, ci + 1);
+      cell.value = v;
+      cell.font = { name: FONT, size: 10 };
+      cell.border = thinBorder();
+      if (ci === 2 || ci === 8) cell.numFmt = 'dd-mmm-yyyy';
+      if (ci === 6 || ci === 13 || ci === 14) cell.numFmt = '#,##0.00';
+    });
+    let fill = EVENT_FILL[r.eventType];
+    if (r.eventType === 'Payment Allocated' && r.daysFromInvoice != null && r.daysFromInvoice > 45) fill = AMBER;
+    if (fill) for (let c = 1; c <= colsF.length; c++) fillCell(wsF.getCell(ri, c), fill);
+  });
+  autosize(wsF, colsF.length, 10, 40);
+  wsF.getColumn(6).width = 30;
+  wsF.getColumn(13).width = 30;
+
+  return wb;
+}
+
+
+/* ================= App glue ================= */
+
+let uploadedWorkbookRows = null;
+let uploadedFileName = '';
+
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const filenameEl = document.getElementById('filename');
+const runBtn = document.getElementById('runBtn');
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+const resultsCard = document.getElementById('resultsCard');
+const statGrid = document.getElementById('statGrid');
+const downloadLink = document.getElementById('downloadLink');
+const resetBtn = document.getElementById('resetBtn');
+const dnToggle = document.getElementById('dnToggle');
+
+let debitNoteMode = 'reduce';
+dnToggle.querySelectorAll('button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    dnToggle.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    debitNoteMode = btn.dataset.val;
+  });
+});
+
+['dragenter', 'dragover'].forEach(evt => drop.addEventListener(evt, e => { e.preventDefault(); drop.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(evt => drop.addEventListener(evt, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+drop.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) handleFile(f);
+});
+
+function handleFile(file) {
+  uploadedFileName = file.name;
+  filenameEl.textContent = file.name;
+  drop.classList.add('has-file');
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array', cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows2 = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+      uploadedWorkbookRows = rows2;
+      runBtn.disabled = false;
+      statusEl.textContent = `Ready — ${rows2.length.toLocaleString()} rows loaded from "${file.name}"`;
+      autoDetectDates(rows2);
+    } catch (err) {
+      statusEl.textContent = 'Could not read this file — is it a valid Tally XLSX export?';
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function autoDetectDates(rows) {
+  // Try to detect the ledger period string e.g. "1-Apr-25 to 30-Jun-26" from the top of the file
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const cell = rows[i] && rows[i][0];
+    if (typeof cell === 'string' && /to/i.test(cell) && /\d/.test(cell)) {
+      const m = cell.match(/(\d{1,2}-\w{3}-\d{2,4})\s*to\s*(\d{1,2}-\w{3}-\d{2,4})/i);
+      if (m) {
+        const end = parseTallyDate(m[2]);
+        if (end) {
+          logLine(`Detected data period ending ${end.toDateString()} — set "Data Available Through" accordingly if different.`);
+        }
+      }
+      break;
+    }
+  }
+}
+
+function parseTallyDate(s) {
+  const m = s.match(/(\d{1,2})-(\w{3})-(\d{2,4})/);
+  if (!m) return null;
+  const months = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+  const mon = months[m[2].toLowerCase()];
+  let yr = parseInt(m[3], 10);
+  if (yr < 100) yr += 2000;
+  return new Date(yr, mon, parseInt(m[1], 10));
+}
+
+function logLine(text) {
+  logEl.style.display = 'block';
+  logEl.innerHTML += `<div>${text}</div>`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+runBtn.addEventListener('click', async () => {
+  if (!uploadedWorkbookRows) return;
+  runBtn.disabled = true;
+  statusEl.textContent = 'Processing…';
+  logEl.style.display = 'block';
+  logEl.innerHTML = '';
+  resultsCard.classList.add('hidden');
+
+  // yield to browser so the "Processing…" state paints before heavy work
+  await new Promise(r => setTimeout(r, 30));
+
+  try {
+    const fyEndDate = toDateOnly(new Date(document.getElementById('fyEnd').value + 'T00:00:00'));
+    const horizonDate = toDateOnly(new Date(document.getElementById('horizon').value + 'T00:00:00'));
+
+    logLine(`Parsing ledger blocks…`);
+    const ledgers = parseLedgers(uploadedWorkbookRows);
+    logLine(`Found ${Object.keys(ledgers).length} creditor ledgers.`);
+
+    logLine(`Running FIFO engine (FY-end: ${fyEndDate.toDateString()}, data horizon: ${horizonDate.toDateString()})…`);
+    const engineRun = runFifoEngine(ledgers, fyEndDate, horizonDate, debitNoteMode);
+    logLine(`${engineRun.delayRows.length} invoice-payment allocations computed.`);
+    logLine(`${engineRun.outstandingRows.length} invoices outstanding as on FY-end.`);
+
+    logLine(`Testing Section 43B(h) disallowance (tracked through data horizon)…`);
+    const results43bh = compute43bh(engineRun.delayRows, engineRun.outstandingRows, fyEndDate, horizonDate);
+    const disallowedCount = results43bh.filter(r => r.status === 'DISALLOWED').length;
+    logLine(`${disallowedCount} invoices confirmed disallowable.`);
+
+    logLine(`Building full FIFO audit trail…`);
+    const auditTrail = buildAuditTrail(ledgers, fyEndDate, horizonDate, debitNoteMode);
+    logLine(`${auditTrail.length} audit-trail events logged.`);
+
+    logLine(`Formatting workbook…`);
+    const engineResult = { ...engineRun, results43bh, auditTrail };
+    const wb = await buildWorkbook(engineResult, { ledgers, fyEndDate, horizonDate, debitNoteMode });
+
+    logLine(`Writing Excel file…`);
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const outName = uploadedFileName.replace(/\.xlsx?$/i, '') + '_MSME_45Day_Report.xlsx';
+    downloadLink.href = url;
+    downloadLink.download = outName;
+
+    logLine(`Done.`);
+    statusEl.textContent = 'Complete.';
+    renderStats(engineRun, results43bh, ledgers);
+    resultsCard.classList.remove('hidden');
+    resultsCard.scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    console.error(err);
+    logLine(`<span style="color:#ff8080">Error: ${err.message}</span>`);
+    statusEl.textContent = 'Something went wrong — see log.';
+  } finally {
+    runBtn.disabled = false;
+  }
+});
+
+function renderStats(engineRun, results43bh, ledgers) {
+  const { delayRows, outstandingRows } = engineRun;
+  const allLate = delayRows.filter(r => r.delayOver45 > 0);
+  const disallowed = results43bh.filter(r => r.status === 'DISALLOWED');
+  const pending = results43bh.filter(r => r.status === 'PENDING (monitor)');
+  const totalDisallowed = disallowed.reduce((s, r) => s + r.totalDisallowed, 0);
+  const totalCr = outstandingRows.reduce((s, r) => s + r.osAtFyEnd, 0);
+  const interestAmt = allLate.reduce((s, r) => s + r.allocAmt, 0);
+
+  const stats = [
+    [Object.keys(ledgers).length, 'Creditor ledgers processed', ''],
+    [allLate.length, 'Payments beyond 45 days (interest exposure)', 'amber'],
+    ['₹' + interestAmt.toLocaleString('en-IN', { maximumFractionDigits: 0 }), 'Amount with interest exposure', 'amber'],
+    [disallowed.length, 'Invoices disallowed u/s 43B(h)', 'red'],
+    ['₹' + totalDisallowed.toLocaleString('en-IN', { maximumFractionDigits: 0 }), 'Total disallowed u/s 43B(h)', 'red'],
+    [pending.length, 'Pending confirmation (monitor)', 'amber'],
+    ['₹' + totalCr.toLocaleString('en-IN', { maximumFractionDigits: 0 }), 'Total outstanding as on FY-end', ''],
+  ];
+  statGrid.innerHTML = '';
+  stats.forEach(([n, l, cls]) => {
+    const div = document.createElement('div');
+    div.className = 'stat' + (cls ? ' ' + cls : '');
+    div.innerHTML = `<div class="n">${n}</div><div class="l">${l}</div>`;
+    statGrid.appendChild(div);
+  });
+}
+
+resetBtn.addEventListener('click', () => {
+  uploadedWorkbookRows = null;
+  uploadedFileName = '';
+  filenameEl.textContent = '';
+  drop.classList.remove('has-file');
+  fileInput.value = '';
+  runBtn.disabled = true;
+  statusEl.textContent = 'Upload a file to begin';
+  logEl.style.display = 'none';
+  logEl.innerHTML = '';
+  resultsCard.classList.add('hidden');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+</script>
+</body>
+</html>
