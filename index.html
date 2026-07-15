@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amit's Workspace — Practice Tools</title>
+<style>
+  :root{
+    --purple:#8458B3; --purple-dark:#6a4491; --lavender:#D0BDF4; --lavender-light:#E5EAF5;
+    --ink:#494D5F; --ink-soft:#6b6f80; --bg:#ffffff; --card-border:#ececf3; --card-shadow:rgba(73,77,95,0.08);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink);}
+  .wrap{max-width:1080px;margin:0 auto;padding:56px 24px 0;}
+
+  header{text-align:center;margin-bottom:52px;}
+  .kicker{display:inline-block;font-size:11px;letter-spacing:3px;font-weight:bold;color:var(--purple);
+    text-transform:uppercase;padding:5px 14px;border:1px solid var(--lavender);border-radius:20px;margin-bottom:18px;}
+  header h1{margin:0 0 10px;font-size:32px;font-weight:800;color:var(--ink);letter-spacing:-0.5px;}
+  header p{margin:0;font-size:14.5px;color:var(--ink-soft);max-width:520px;margin:0 auto;line-height:1.6;}
+  .accent-rule{width:56px;height:4px;background:var(--purple);border-radius:2px;margin:22px auto 0;}
+
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:22px;max-width:760px;margin:0 auto;}
+  @media(max-width:640px){.grid{grid-template-columns:1fr;}}
+
+  .card{background:#fff;border:1px solid var(--card-border);border-radius:14px;padding:28px 26px;
+    display:flex;flex-direction:column;justify-content:space-between;transition:.18s ease;
+    box-shadow:0 1px 3px var(--card-shadow);}
+  .card:hover{transform:translateY(-3px);box-shadow:0 12px 28px var(--card-shadow);border-color:var(--lavender);}
+
+  .icon-box{width:46px;height:46px;border-radius:11px;background:var(--lavender-light);
+    display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:18px;}
+  .card h3{margin:0 0 9px;font-size:17px;font-weight:700;color:var(--ink);line-height:1.35;}
+  .card p{margin:0;font-size:13.5px;color:var(--ink-soft);line-height:1.6;min-height:64px;}
+
+  .card-bottom{margin-top:22px;display:flex;align-items:center;justify-content:space-between;}
+  .tag{font-size:10px;font-weight:bold;letter-spacing:.5px;text-transform:uppercase;color:var(--purple);
+    background:var(--lavender-light);padding:4px 9px;border-radius:6px;}
+  .open-btn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:bold;color:#fff;
+    background:var(--purple);padding:9px 17px;border-radius:8px;text-decoration:none;transition:.15s;}
+  .open-btn:hover{background:var(--purple-dark);}
+
+  footer{margin-top:70px;background:var(--ink);color:#e8e8ee;padding:34px 24px;text-align:center;}
+  footer .name{font-size:14px;font-weight:bold;color:#fff;}
+  footer .role{font-size:11.5px;color:#b8bac6;margin-top:4px;}
+  footer .fine{font-size:10.5px;color:#8b8e9c;margin-top:16px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="kicker">Amit's Workspace</span>
+    <h1>Practice Tools</h1>
+    <p>A collection of standalone reconciliation and compliance tools built for day-to-day CA practice work. Each tool runs entirely on its own — nothing here shares data or code with anything else.</p>
+    <div class="accent-rule"></div>
+  </header>
+
+  <div class="grid">
+
+    <div class="card">
+      <div>
+        <div class="icon-box">📊</div>
+        <h3>GSTR-1 Reconciliation Tool</h3>
+        <p>Matches Tally Sales/Credit/Debit Note registers against a GSTR-1 export — handles amendments, Dr/Cr detection, and produces a full Excel workbook with dashboard, match detail, and mismatch tabs.</p>
+      </div>
+      <div class="card-bottom">
+        <span class="tag">GST</span>
+        <a class="open-btn" href="GSTR1_Reconciliation_Tool.html">Open Tool →</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div>
+        <div class="icon-box">📦</div>
+        <h3>MSME 45-Day / 43B(h) Analyzer</h3>
+        <p>FIFO-matches Tally creditor ledger exports to flag MSME payment delays and compute Section 43B(h) disallowance, with interest exposure and creditor classification.</p>
+      </div>
+      <div class="card-bottom">
+        <span class="tag">Income Tax</span>
+        <a class="open-btn" href="msme-43bh-analyzer.html">Open Tool →</a>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <div class="name">CA Amit N. Lakhtariya</div>
+    <div class="role">Designated Partner, Pradip B. Gandhi &amp; Co. LLP · Chartered Accountants</div>
+    <div class="fine">All tools run client-side in your browser — no file is uploaded to any server.</div>
+  </footer>
+
+</div>
+</body>
+</html>
