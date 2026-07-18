@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITC vs GSTR-2B Reconciliation Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+  :root{
+    --c1:#DCEBFF; --c2:#EEF5FF; --c3:#BFDFFF; --c4:#1E5FFF; --c5:#16233D;
+    --teal:#12B886; --teal-light:#E3F9F1;
+    --bg:#F3F8FF; --card:#FFFFFF; --border:#E7EDF7; --good:#12B886; --bad:#E0473E; --warn:#D99A1B;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:'Segoe UI',Arial,sans-serif;background:linear-gradient(160deg,#F3F8FF 0%,#EFFAF5 100%);color:var(--c5);margin:0;padding:0;}
+  header{background:linear-gradient(120deg,#1E5FFF,#12B886);color:#fff;padding:0;}
+  .header-inner{max-width:1180px;margin:0 auto;padding:26px 24px;display:flex;align-items:center;gap:16px;}
+  .brand-badge{width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;letter-spacing:.5px;flex-shrink:0;border:1.5px solid rgba(255,255,255,.4);}
+  header h1{margin:0;font-size:21px;font-weight:700;}
+  header p{margin:4px 0 0;font-size:12.5px;opacity:.92;}
+  header .devby{margin-top:6px;font-size:12px;opacity:.85;}
+  header .devby b{font-weight:700;}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 40px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px 28px;margin-bottom:20px;box-shadow:0 6px 24px rgba(20,50,110,.06);}
+  .card h2{margin:0 0 4px;font-size:16px;color:var(--c5);display:flex;align-items:center;gap:10px;}
+  .step-num{background:linear-gradient(135deg,var(--c4),var(--teal));color:#fff;border-radius:50%;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;font-weight:700;}
+  .card .sub{font-size:12.5px;color:#7C8AA5;margin:0 0 16px;}
+  .disabled{opacity:.4;pointer-events:none;}
+  input[type=file]{border:1.5px dashed var(--c3);border-radius:12px;padding:16px;width:100%;background:var(--c2);cursor:pointer;font-size:13px;}
+  button{background:var(--c4);color:#fff;border:none;padding:10px 20px;border-radius:24px;font-size:13.5px;cursor:pointer;font-weight:600;transition:transform .1s, box-shadow .15s;box-shadow:0 3px 10px rgba(30,95,255,.25);}
+  button:hover{background:#154fdb;box-shadow:0 4px 14px rgba(30,95,255,.35);}
+  button.secondary{background:#fff;color:var(--c4);border:1.5px solid var(--c4);box-shadow:none;}
+  button.secondary:hover{background:var(--c2);}
+  button:disabled{background:#D7DEEA;color:#9AA5B8;cursor:not-allowed;box-shadow:none;}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:10px;}
+  th,td{border:1px solid var(--border);padding:6px 8px;text-align:left;}
+  th{background:var(--c2);color:var(--c5);font-weight:600;position:sticky;top:0;}
+  .tbl-scroll{max-height:380px;overflow:auto;border:1px solid var(--border);border-radius:12px;}
+  .filelist{list-style:none;padding:0;margin:12px 0 0;}
+  .filelist li{display:flex;justify-content:space-between;align-items:center;background:var(--c2);padding:9px 14px;border-radius:10px;margin-bottom:6px;font-size:13px;}
+  .filelist button{padding:3px 10px;font-size:11px;background:var(--bad);box-shadow:none;border-radius:14px;}
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;}
+  .badge.ok{background:var(--teal-light);color:var(--good);}
+  .badge.err{background:#FBE4E2;color:var(--bad);}
+  .badge.warn{background:#FCF1DA;color:var(--warn);}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-top:14px;}
+  .stat{background:linear-gradient(160deg,var(--c2),#fff);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
+  .stat .num{font-size:23px;font-weight:800;color:var(--c4);}
+  .stat .lbl{font-size:11.5px;color:#7C8AA5;margin-top:2px;}
+  select,input[type=text]{padding:6px 9px;border:1px solid var(--border);border-radius:8px;font-size:12px;width:100%;}
+  .errbox{background:#FBE4E2;border:1px solid #f2b4b4;color:var(--bad);padding:12px 16px;border-radius:10px;font-size:12.5px;margin-top:10px;}
+  .infobox{background:var(--teal-light);border:1px solid #a9e6cf;color:#0a7a56;padding:12px 16px;border-radius:10px;font-size:12.5px;margin-top:10px;}
+  footer{background:var(--c5);color:#B9C2D6;padding:0;margin-top:20px;}
+  .footer-inner{max-width:1180px;margin:0 auto;padding:32px 24px;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;}
+  .footer-col h4{color:#fff;font-size:13px;margin:0 0 8px;}
+  .footer-col p{font-size:12px;line-height:1.7;margin:0;color:#AEB9CE;}
+  .footer-col a{color:#8FC7FF;text-decoration:none;}
+  .footer-bottom{border-top:1px solid rgba(255,255,255,.1);text-align:center;padding:14px;font-size:11px;color:#8A93A8;}
+  .taxrow input[type=checkbox]{transform:scale(1.2);margin-right:6px;}
+  .flexrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .pill{font-size:11px;background:var(--c2);border-radius:12px;padding:3px 10px;color:var(--c4);font-weight:600;}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="brand-badge">ANL</div>
+    <div>
+      <h1>ITC vs GSTR-2B Reconciliation Tool</h1>
+      <p>Purchase Register (from Input Tax ledgers) → GSTR-2B → 9-pass matching → GSTIN-wise summary — all in one workbook</p>
+      <p class="devby">Developed by <b>CA Amit N. Lakhtariya</b> · Pradip B. Gandhi &amp; Co. LLP, Chartered Accountants</p>
+    </div>
+  </div>
+</header>
+<div class="wrap">
+
+  <!-- STEP 1: Upload ledgers -->
+  <div class="card" id="step1">
+    <h2><span class="step-num">1</span> Upload Input Tax Ledger files</h2>
+    <p class="sub">Upload each rate-ledger export separately (Input CGST@6%, @9%, @2.5%, IGST@18% etc.). Header row must be exactly Row 13 (Date / Particulars) — files that don't match will be rejected with a clear reason, not silently misread.</p>
+    <input type="file" id="ledgerInput" multiple accept=".xlsx,.xls">
+    <ul class="filelist" id="ledgerFileList"></ul>
+    <div id="ledgerErrors"></div>
+    <div style="margin-top:14px;">
+      <button id="btnParseLedgers" disabled>Parse &amp; Detect Tax Ledger Columns</button>
+    </div>
+  </div>
+
+  <!-- STEP 2: Confirm tax ledgers -->
+  <div class="card disabled" id="step2">
+    <h2><span class="step-num">2</span> Confirm which columns are Tax Ledgers</h2>
+    <p class="sub">Auto-detected suggestions are pre-selected (based on column name). Please review and correct before continuing — this avoids the classification confusion seen with auto-guessing.</p>
+    <div class="tbl-scroll"><table id="taxColTable"><thead><tr><th>Column Name</th><th>Appears in # files</th><th>Classification</th></tr></thead><tbody></tbody></table></div>
+    <div style="margin-top:14px;">
+      <button id="btnConfirmTax" disabled>Confirm &amp; Build Purchase Register</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: PR + Needs Review -->
+  <div class="card disabled" id="step3">
+    <h2><span class="step-num">3</span> Purchase Register &amp; Needs Review</h2>
+    <div class="stat-grid" id="prStats"></div>
+    <div id="reviewSection" style="margin-top:18px;"></div>
+    <div class="flexrow" style="margin-top:14px;">
+      <button id="btnDownloadReview" disabled>Download Needs Review Sheet</button>
+      <span class="pill" id="reviewDownloadedPill" style="display:none;">Downloaded — classify it, then upload below</span>
+    </div>
+    <div id="reviewUploadRow" style="margin-top:14px;display:none;">
+      <input type="file" id="reviewUploadInput" accept=".xlsx,.xls">
+      <div id="reviewUploadErrors"></div>
+    </div>
+    <div style="margin-top:14px;">
+      <button id="btnApplyReview" disabled>Apply Classifications &amp; Continue</button>
+    </div>
+  </div>
+
+  <!-- STEP 4: GSTR-2B upload -->
+  <div class="card disabled" id="step4">
+    <h2><span class="step-num">4</span> Upload GSTR-2B export</h2>
+    <p class="sub">Government portal export with tabs B2B / B2BA / CDNR / CDNRA / IMPG (header row 10, data from row 11). RCM invoices are split out automatically via the Reverse Charge column.</p>
+    <input type="file" id="gstr2bInput" accept=".xlsx,.xls">
+    <div id="gstr2bStats" class="stat-grid" style="margin-top:14px;"></div>
+    <div id="gstr2bErrors"></div>
+  </div>
+
+  <!-- STEP 5: Matching engine -->
+  <div class="card disabled" id="step5">
+    <h2><span class="step-num">5</span> Run 9-Pass Matching Engine</h2>
+    <div class="flexrow">
+      <label style="font-size:13px;">Tolerance ±₹<input type="text" id="tolerance" value="10" style="width:60px;display:inline-block;margin-left:6px;"></label>
+      <button id="btnRunMatch">Run Matching</button>
+    </div>
+    <div id="matchResults" style="margin-top:16px;"></div>
+  </div>
+
+  <!-- STEP 6: GSTIN Summary + Download -->
+  <div class="card disabled" id="step6">
+    <h2><span class="step-num">6</span> GSTIN-wise Summary &amp; Final Download</h2>
+    <div id="gstinSummaryPreview"></div>
+    <div style="margin-top:16px;">
+      <button id="btnDownload">Download Final Consolidated Workbook</button>
+    </div>
+  </div>
+
+</div>
+<footer>
+  <div class="footer-inner">
+    <div class="footer-col">
+      <h4>CA Amit N. Lakhtariya</h4>
+      <p>Designated Partner<br>Membership No. 117820 (ICAI)</p>
+    </div>
+    <div class="footer-col">
+      <h4>Pradip B. Gandhi &amp; Co. LLP</h4>
+      <p>Chartered Accountants · FRN 118674W/W101002<br>819, Iconic Shyamal, Shyamal Cross Road, Satellite, Ahmedabad – 380015</p>
+    </div>
+    <div class="footer-col">
+      <h4>Contact</h4>
+      <p><a href="https://www.caahmedabad.com" target="_blank">www.caahmedabad.com</a><br>Internal Practice Tool</p>
+    </div>
+  </div>
+  <div class="footer-bottom">© Pradip B. Gandhi &amp; Co. LLP, Chartered Accountants — for internal firm use</div>
+</footer>
+
+<script>
+const STATE = {
+  files: [],            // {name, wb, ws, headerRow, cols:{idx:name}, error}
+  taxColNames: {},       // name -> {count, guess}
+  confirmedTax: {},      // name -> 'IGST'|'CGST'|'SGST'
+  allRows: [],           // every parsed row (pre-dedup)
+  prLines: [],           // deduped Normal ITC purchase register
+  reviewRows: [],        // GSTIN-blank rows
+  buckets: {RCM:[], 'Import ITC':[], 'Reversal/P&L Expense':[], 'GST Cash Payment to Department':[], 'Offset - Ignore':[]},
+  g2b: { b2bFinal: [], rcm: [], cdnr: [], impg: [], b2baOrphans: [] },
+  match: null,
+  gstinSummary: []
+};
+const FIXED_COLS = 7; // Date,Particulars,VoucherType,VoucherNo,GSTIN,Value,GrossTotal (1-indexed 1..7)
+const HEADER_ROW = 13; // 1-indexed excel row
+
+function colLetter(n){ return XLSX.utils.encode_col(n-1); }
+function cellRef(r,c){ return XLSX.utils.encode_cell({r:r-1,c:c-1}); } // r,c 1-indexed
+function getCell(ws,r,c){ return ws[cellRef(r,c)]; }
+function cellVal(ws,r,c){ const cell=getCell(ws,r,c); return cell? cell.v : undefined; }
+function cellFmt(ws,r,c){ const cell=getCell(ws,r,c); return cell? (cell.z||'') : ''; }
+function toISO(d){
+  if(d instanceof Date) return d.toISOString().slice(0,10);
+  if(typeof d === 'number'){ const dt = XLSX.SSF.parse_date_code(d); return `${dt.y}-${String(dt.m).padStart(2,'0')}-${String(dt.d).padStart(2,'0')}`; }
+  return d ? String(d).slice(0,10) : '';
+}
+function toDisplayDate(iso){
+  if(!iso) return '';
+  const [y,m,d] = iso.split('-');
+  return `${d}-${m}-${y}`;
+}
+function normGSTIN(g){ return (g||'').toString().trim().toUpperCase(); }
+function panOf(g){ g=normGSTIN(g); return g.length>=12 ? g.slice(2,12) : g; }
+function normInv(v){
+  if(v===undefined || v===null || v==='') return '';
+  let s = String(v).trim().toUpperCase();
+  s = s.replace(/[\s\-\/\.]/g,'');
+  s = s.replace(/^0+(?=\d)/,'');
+  return s;
+}
+function getAmount(ws,r,c){
+  const cell = getCell(ws,r,c);
+  if(!cell || cell.v===undefined || cell.v==='' ) return 0;
+  const fmt = cell.z || '';
+  let sign = 1;
+  if(fmt.indexOf('Cr')>-1) sign = -1;
+  else if(fmt.indexOf('Dr')>-1) sign = 1;
+  const v = parseFloat(cell.v);
+  return isNaN(v) ? 0 : sign*v;
+}
+function classifyColName(name){
+  const nl = name.trim().toLowerCase();
+  if(STATE.confirmedTax[name.trim()]) return {cls:'TAX', sub: STATE.confirmedTax[name.trim()]};
+  if(nl.startsWith('receivable-')) return {cls:'RECEIVABLE'};
+  if(nl.startsWith('tds')) return {cls:'TDS'};
+  if(nl.indexOf('round off')>-1) return {cls:'ROUNDOFF'};
+  if(nl.indexOf('custom duty')>-1 || nl.indexOf('rodtep')>-1) return {cls:'IMPORT_ADJ'};
+  return {cls:'EXPENSE'};
+}
+
+/* ---------------- STEP 1: file upload + header validation ---------------- */
+document.getElementById('ledgerInput').addEventListener('change', function(e){
+  for(const f of e.target.files){
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      const data = new Uint8Array(ev.target.result);
+      const wb = XLSX.read(data, {type:'array', cellNF:true, cellDates:true});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      STATE.files.push({name:f.name, ws:ws});
+      renderFileList();
+      checkParseButton();
+    };
+    reader.readAsArrayBuffer(f);
+  }
+});
+function renderFileList(){
+  const ul = document.getElementById('ledgerFileList');
+  ul.innerHTML = '';
+  STATE.files.forEach((f,i)=>{
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${f.name}</span><button onclick="removeFile(${i})">Remove</button>`;
+    ul.appendChild(li);
+  });
+}
+function removeFile(i){ STATE.files.splice(i,1); renderFileList(); checkParseButton(); }
+function checkParseButton(){ document.getElementById('btnParseLedgers').disabled = STATE.files.length===0; }
+
+// Fields we must locate by NAME in the header row — position varies by client's Tally config
+const FIELD_PATTERNS = {
+  date: /^date$/i,
+  particulars: /^particulars$/i,
+  voucherType: /^voucher\s*type$/i,
+  voucherNo: /^voucher\s*no\.?$/i,
+  gstin: /^gstin\s*\/?\s*uin$/i,
+  grossTotal: /^gross\s*total$/i,
+};
+function detectFileColumns(files, errBox){
+  const taxCandidates = {};
+  const validFiles = [];
+  files.forEach(f=>{
+    const range = XLSX.utils.decode_range(f.ws['!ref']);
+    const maxCol = range.e.c+1; // 1-indexed
+    const found = {};
+    for(let c=1;c<=maxCol;c++){
+      const raw = cellVal(f.ws,HEADER_ROW,c);
+      if(!raw) continue;
+      const name = String(raw).trim();
+      for(const key in FIELD_PATTERNS){
+        if(found[key]===undefined && FIELD_PATTERNS[key].test(name)) found[key]=c;
+      }
+    }
+    if(found.date===undefined || found.particulars===undefined){
+      if(errBox){
+        const div = document.createElement('div');
+        div.className = 'errbox';
+        div.innerHTML = `<b>${f.name}</b>: Could not locate "Date" and "Particulars" headers on Row 13. This file was rejected — please ensure the ledger export has its header row at Row 13, then re-upload.`;
+        errBox.appendChild(div);
+      }
+      return;
+    }
+    if(found.gstin===undefined || found.voucherNo===undefined || found.voucherType===undefined){
+      if(errBox){
+        const div = document.createElement('div');
+        div.className = 'errbox';
+        div.innerHTML = `<b>${f.name}</b>: Could not locate one of Voucher Type / Voucher No. / GSTIN-UIN by name on Row 13 — found columns: ${JSON.stringify(found)}. File rejected; please check the export.`;
+        errBox.appendChild(div);
+      }
+      return;
+    }
+    // Every OTHER column is a CANDIDATE — but only keep it if it actually carries the
+    // Dr/Cr number-format signature somewhere in the data (the real signal that separates
+    // genuine ledger-amount columns from metadata columns like Voucher Ref. No./Date,
+    // Buyer/Supplier, or a plain "Value" column — name alone isn't reliable across clients).
+    const fixedColSet = new Set(Object.values(found));
+    const lastRowForScan = range.e.r+1;
+    const cols = {};
+    for(let c=1;c<=maxCol;c++){
+      if(fixedColSet.has(c)) continue;
+      const name = cellVal(f.ws,HEADER_ROW,c);
+      if(!name) continue;
+      let hasDrCr = false;
+      for(let r=HEADER_ROW+1; r<=lastRowForScan && !hasDrCr; r++){
+        const cell = getCell(f.ws,r,c);
+        if(cell && cell.z && (cell.z.indexOf('Dr')>-1 || cell.z.indexOf('Cr')>-1)){ hasDrCr = true; }
+      }
+      if(!hasDrCr) continue; // metadata column — never treated as a ledger amount
+      cols[c] = String(name).trim();
+      const key = String(name).trim();
+      taxCandidates[key] = (taxCandidates[key]||0)+1;
+    }
+    f.cols = cols;
+    f.maxCol = maxCol;
+    f.fieldCols = found; // {date, particulars, voucherType, voucherNo, gstin, grossTotal}
+    validFiles.push(f);
+  });
+  return {validFiles, taxCandidates};
+}
+
+document.getElementById('btnParseLedgers').addEventListener('click', function(){
+  const btn = this;
+  const errBox = document.getElementById('ledgerErrors');
+  errBox.innerHTML = '';
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = 'Scanning files…';
+  setTimeout(function(){
+  try{
+  const {validFiles, taxCandidates} = detectFileColumns(STATE.files, errBox);
+
+  STATE.files = validFiles;
+  if(validFiles.length===0){
+    errBox.innerHTML += '<div class="errbox">No valid files to proceed — fix the header row and re-upload.</div>';
+    return;
+  }
+
+  // build tax column table with regex guesses
+  const tbody = document.querySelector('#taxColTable tbody');
+  tbody.innerHTML = '';
+  const sortedNames = Object.keys(taxCandidates).sort();
+  sortedNames.forEach(name=>{
+    const nl = name.toLowerCase();
+    let guess = '';
+    if(/(^|\s)input\s*(igst|cgst|sgst)/.test(nl) || /(igst|cgst|sgst)\s*input/.test(nl)){
+      if(nl.indexOf('igst')>-1) guess='IGST';
+      else if(nl.indexOf('cgst')>-1) guess='CGST';
+      else if(nl.indexOf('sgst')>-1) guess='SGST';
+    }
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${name}</td><td style="text-align:center;">${taxCandidates[name]}</td>
+      <td><select data-name="${name}">
+        <option value="">Not Tax</option>
+        <option value="IGST" ${guess==='IGST'?'selected':''}>IGST</option>
+        <option value="CGST" ${guess==='CGST'?'selected':''}>CGST</option>
+        <option value="SGST" ${guess==='SGST'?'selected':''}>SGST</option>
+      </select></td>`;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('step2').classList.remove('disabled');
+  document.getElementById('btnConfirmTax').disabled = false;
+  } catch(err){
+    errBox.innerHTML += `<div class="errbox">Unexpected error while parsing: ${err.message}. Open the browser console (F12) for details.</div>`;
+    console.error('Parse ledgers failed:', err);
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
+  }
+  }, 20);
+});
+
+document.getElementById('btnConfirmTax').addEventListener('click', function(){
+  const btn = this;
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = 'Building Purchase Register…';
+  STATE.confirmedTax = {};
+  document.querySelectorAll('#taxColTable select').forEach(sel=>{
+    if(sel.value) STATE.confirmedTax[sel.dataset.name] = sel.value;
+  });
+  setTimeout(function(){
+    try {
+      parseAllLedgers();
+      document.getElementById('step3').classList.remove('disabled');
+    } catch(err){
+      alert('Unexpected error while building the Purchase Register: ' + err.message + '. Open the browser console (F12) for details.');
+      console.error('parseAllLedgers failed:', err);
+    } finally {
+      btn.textContent = origText;
+      btn.disabled = false;
+    }
+  }, 20);
+});
+
+/* ---------------- STEP 3: parse rows, dedupe, needs-review ---------------- */
+function parseAllLedgers(){
+  STATE.allRows = [];
+  STATE.files.forEach(f=>{
+    const ws = f.ws;
+    const fc = f.fieldCols;
+    // find Grand Total row (scan the Particulars column from bottom)
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    let lastDataRow = range.e.r+1; // 1-indexed
+    for(let r=lastDataRow;r>HEADER_ROW;r--){
+      const b = String(cellVal(ws,r,fc.particulars)||'').trim();
+      if(b === 'Grand Total'){ lastDataRow = r; break; }
+    }
+    for(let r=HEADER_ROW+1;r<lastDataRow;r++){
+      const dateRaw = cellVal(ws,r,fc.date);
+      const party = cellVal(ws,r,fc.particulars);
+      const vtypeRaw = cellVal(ws,r,fc.voucherType);
+      const vno = cellVal(ws,r,fc.voucherNo);
+      const gstin = cellVal(ws,r,fc.gstin);
+      const partyS = party ? String(party).trim() : '';
+      const gstinS = gstin ? String(gstin).trim() : '';
+      const vtypeS = vtypeRaw ? String(vtypeRaw).trim() : '';
+      if(!dateRaw && !partyS && !vtypeS) continue;
+
+      let TV=0,I=0,C=0,S=0;
+      for(const c in f.cols){
+        const name = f.cols[c];
+        if(!name) continue;
+        const amt = getAmount(ws,r,+c);
+        if(amt===0) continue;
+        const cls = classifyColName(name);
+        if(cls.cls==='TAX'){
+          if(cls.sub==='IGST') I+=amt;
+          else if(cls.sub==='CGST') C+=amt;
+          else if(cls.sub==='SGST') S+=amt;
+        } else if(cls.cls==='EXPENSE'){ TV+=amt; }
+      }
+      const dateISO = toISO(dateRaw);
+      const ref = (vno!==undefined && vno!==null && String(vno).trim()!=='') ? vno : `SYN|${dateISO}|${partyS}|${(TV+I+C+S).toFixed(2)}`;
+      const rowKey = `${f.name}|${dateISO}|${vtypeS}|${ref}`;
+
+      let suggested = '';
+      if(vtypeS === 'GST OFFSET') suggested = 'Offset - Ignore';
+
+      STATE.allRows.push({
+        source_file: f.name, date: dateISO, party: partyS, gstin: gstinS,
+        voucher_type: vtypeS, voucher_no: vno!==undefined?String(vno):'', row_key: rowKey,
+        TV: round2(TV), I: round2(I), C: round2(C), S: round2(S),
+        needs_review: !gstinS, suggested_category: suggested
+      });
+    }
+  });
+
+  const gstinPresent = STATE.allRows.filter(r=>!r.needs_review);
+  STATE.reviewRows = STATE.allRows.filter(r=>r.needs_review);
+
+  // dedupe gstin-present rows: key = gstin|voucherType|voucherNo(or ref)|date
+  const groups = {};
+  gstinPresent.forEach(r=>{
+    const key = `${normGSTIN(r.gstin)}|${r.voucher_type}|${r.voucher_no||r.row_key}|${r.date}`;
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  });
+  STATE.prLines = Object.values(groups).map(items=>{
+    const base = items[0];
+    const sources = [...new Set(items.map(i=>i.source_file))];
+    return {...base, IV: round2(base.TV+base.I+base.C+base.S), n_copies: items.length, source_files: sources.join(', ')};
+  });
+
+  renderPRStats();
+  renderReviewTable();
+}
+function round2(n){ return Math.round(n*100)/100; }
+
+function renderPRStats(){
+  const dupes = STATE.prLines.filter(p=>p.n_copies>1).length;
+  const stats = [
+    ['Raw rows parsed', STATE.allRows.length],
+    ['GSTIN present', STATE.allRows.length-STATE.reviewRows.length],
+    ['Deduplicated PR lines', STATE.prLines.length],
+    ['Cross-file duplicates removed', dupes],
+    ['Needs Review (GSTIN blank)', STATE.reviewRows.length],
+  ];
+  document.getElementById('prStats').innerHTML = stats.map(([lbl,num])=>
+    `<div class="stat"><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`).join('');
+}
+
+function renderReviewTable(){
+  const el = document.getElementById('reviewSection');
+  const dlBtn = document.getElementById('btnDownloadReview');
+  if(STATE.reviewRows.length===0){
+    el.innerHTML = '<div class="infobox">No rows need review — every row has a GSTIN. Click Continue below.</div>';
+    dlBtn.disabled = true;
+    document.getElementById('btnApplyReview').disabled = false;
+    document.getElementById('btnApplyReview').textContent = 'Continue';
+    return;
+  }
+  el.innerHTML = `<div class="infobox"><b>${STATE.reviewRows.length}</b> rows have a blank GSTIN and need classification.
+    Download the sheet below, fill in the <b>Category</b> column (dropdown built into the file) and <b>Corrected GSTIN</b>
+    where applicable, then upload the completed file.</div>`;
+  dlBtn.disabled = false;
+}
+
+document.getElementById('btnDownloadReview').addEventListener('click', async function(){
+  const btn = this;
+  const errBox = document.getElementById('reviewUploadErrors');
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = 'Building file…';
+  try {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Needs Review');
+  ws.addRow(['Rows with GSTIN blank — classify each row, insert GSTIN where applicable, then re-upload this sheet']);
+  ws.addRow(["Do NOT edit Row Key, Date, Party, Voucher Type, Voucher No., Source File, or the amount columns. Only fill in 'Category' and 'Corrected GSTIN'."]);
+  ws.addRow([]);
+  const headerRow = ws.addRow(['Row Key (do not edit)','Date','Party','Voucher Type','Voucher No.','Source File','TV','I','C','S','Suggested Category','Category (fill in)','Corrected GSTIN (fill in)']);
+  headerRow.eachCell(cell=>{ cell.font={bold:true,color:{argb:'FFFFFFFF'}}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFC00000'}}; cell.alignment={horizontal:'center',wrapText:true}; });
+  const moneyFmt = '#,##0.00;(#,##0.00);"-"';
+  const startRow = headerRow.number+1;
+  STATE.reviewRows.forEach(r=>{
+    const row = ws.addRow([r.row_key, null, r.party, r.voucher_type, r.voucher_no, r.source_file, r.TV, r.I, r.C, r.S, r.suggested_category||'', r.suggested_category ? r.suggested_category.replace(' (suggested - please confirm)','') : '', '']);
+    if(r.date){ const [y,m,d]=r.date.split('-').map(Number); row.getCell(2).value = new Date(y,m-1,d); row.getCell(2).numFmt='dd-mm-yyyy'; }
+    [7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    row.getCell(1).font = {size:8, color:{argb:'FF888888'}};
+  });
+  const lastRow = ws.lastRow.number;
+  ws.dataValidations.add(`L${startRow}:L${lastRow}`, {
+    type:'list', allowBlank:true,
+    formulae:['"Offset - Ignore,Normal ITC,RCM,GST Cash Payment to Department,Reversal/P&L Expense,Import ITC,Insert GSTIN"']
+  });
+  ws.columns = [{width:32},{width:12},{width:26},{width:20},{width:16},{width:16},{width:12},{width:10},{width:10},{width:10},{width:28},{width:20},{width:20}];
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'Needs_Review.xlsx';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  document.getElementById('reviewDownloadedPill').style.display = 'inline-block';
+  document.getElementById('reviewUploadRow').style.display = 'block';
+  btn.textContent = origText;
+  btn.disabled = false;
+  } catch(err){
+    btn.textContent = origText;
+    btn.disabled = false;
+    errBox.innerHTML = `<div class="errbox">Download failed: ${err.message}. Check your browser isn't blocking downloads/popups for this page, then try again. If it keeps failing, open the browser console (F12) and share the error shown there.</div>`;
+    console.error('Needs Review download failed:', err);
+  }
+});
+
+document.getElementById('reviewUploadInput').addEventListener('change', function(e){
+  const f = e.target.files[0];
+  if(!f) return;
+  const errBox = document.getElementById('reviewUploadErrors');
+  errBox.innerHTML = '';
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const data = new Uint8Array(ev.target.result);
+    const wb = XLSX.read(data, {type:'array', cellNF:true, cellDates:true});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const classificationMap = {};
+    for(let r=5; r<=range.e.r+1; r++){
+      const rowKey = cellVal(ws,r,1);
+      if(!rowKey) continue;
+      const category = cellVal(ws,r,12);
+      const correctedGstin = cellVal(ws,r,13);
+      classificationMap[String(rowKey).trim()] = {
+        category: category ? String(category).trim() : '',
+        correctedGstin: correctedGstin ? String(correctedGstin).trim() : ''
+      };
+    }
+
+    const missing = [];
+    STATE.reviewRows.forEach(r=>{
+      const entry = classificationMap[r.row_key];
+      if(!entry){ missing.push(r.row_key); return; }
+      r.category = entry.category;
+      r.correctedGstin = entry.correctedGstin;
+    });
+
+    const unresolved = STATE.reviewRows.filter(r=>!r.category);
+    if(missing.length>0){
+      errBox.innerHTML = `<div class="errbox">${missing.length} row(s) from the original Needs Review set were not found in the uploaded file (Row Key mismatch) — please re-download and re-upload without editing the Row Key column.</div>`;
+      return;
+    }
+    if(unresolved.length>0){
+      errBox.innerHTML = `<div class="errbox">${unresolved.length} row(s) still have no Category filled in. Please complete every row and re-upload.</div>`;
+      return;
+    }
+    errBox.innerHTML = `<div class="infobox">${STATE.reviewRows.length} classified rows loaded successfully. Click "Apply Classifications &amp; Continue".</div>`;
+    document.getElementById('btnApplyReview').disabled = false;
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+document.getElementById('btnApplyReview').addEventListener('click', function(){
+  if(STATE.reviewRows.length>0){
+    const unresolved = STATE.reviewRows.filter(r=>!r.category);
+    if(unresolved.length>0){
+      alert(`${unresolved.length} row(s) still have no Category. Please upload a completed Needs Review sheet first.`);
+      return;
+    }
+  }
+
+  // route
+  STATE.buckets = {RCM:[], 'Import ITC':[], 'Reversal/P&L Expense':[], 'GST Cash Payment to Department':[], 'Offset - Ignore':[]};
+  STATE.reviewRows.forEach(r=>{
+    if(r.category==='Offset - Ignore'){ STATE.buckets['Offset - Ignore'].push(r); return; }
+    if(r.category==='Normal ITC' || r.category==='Insert GSTIN'){
+      const row = {...r};
+      if(r.correctedGstin) row.gstin = r.correctedGstin;
+      STATE.prLines.push({...row, IV: round2(row.TV+row.I+row.C+row.S), n_copies:1, source_files:row.source_file});
+      return;
+    }
+    if(STATE.buckets[r.category]) STATE.buckets[r.category].push(r);
+  });
+
+  // re-dedupe PR (in case corrected GSTIN now collides with existing invoice)
+  const groups = {};
+  STATE.prLines.forEach(r=>{
+    const key = `${normGSTIN(r.gstin)}|${r.voucher_type}|${r.voucher_no||r.row_key}|${r.date}`;
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(r);
+  });
+  STATE.prLines = Object.values(groups).map(items=>{
+    const base = items[0];
+    const sources = [...new Set(items.map(i=>i.source_files||i.source_file))];
+    return {...base, IV: round2(base.TV+base.I+base.C+base.S), n_copies: items.length, source_files: sources.join(', ')};
+  });
+
+  renderPRStats();
+  document.getElementById('step4').classList.remove('disabled');
+});
+
+/* ---------------- STEP 4: GSTR-2B parsing ---------------- */
+document.getElementById('gstr2bInput').addEventListener('change', function(e){
+  const f = e.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const data = new Uint8Array(ev.target.result);
+    const wb = XLSX.read(data, {type:'array', cellNF:true, cellDates:true});
+    parse2B(wb);
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+function find2BHeaderRow(ws){
+  // header typically row 10 (1-indexed); scan rows 5-15 for 'SR NO' in col A
+  for(let r=5;r<=15;r++){
+    if(String(cellVal(ws,r,1)||'').trim().toUpperCase()==='SR NO') return r;
+  }
+  return null;
+}
+function read2BTab(ws, colMap){
+  const errs = document.getElementById('gstr2bErrors');
+  if(!ws) return [];
+  const hr = find2BHeaderRow(ws);
+  if(hr===null) return [];
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  const lastRow = range.e.r+1;
+  const rows = [];
+  for(let r=hr+1;r<=lastRow;r++){
+    const sr = cellVal(ws,r,1);
+    if(sr===undefined || sr===null || sr==='' || String(sr).trim().toUpperCase()==='TOTAL') continue;
+    if(!/^\d+$/.test(String(sr).trim())) continue;
+    const row = {};
+    Object.keys(colMap).forEach(field=>{ row[field] = cellVal(ws,r,colMap[field]); });
+    rows.push(row);
+  }
+  return rows;
+}
+function findSheet(wb, name){
+  const target = name.trim().toLowerCase();
+  const match = wb.SheetNames.find(sn => sn.trim().toLowerCase() === target);
+  return match ? wb.Sheets[match] : null;
+}
+function parse2B(wb){
+  const STD = {invoice_no:2, invoice_dt:3, gstin:4, rev_chrg:5, name:6, rate:11, tv:12, igst:13, cgst:14, sgst:15, cess:16, value:17, eligible_itc:22};
+  const wsB2B = findSheet(wb, 'B2B');
+  const b2bAll = read2BTab(wsB2B, STD);
+  const b2bRegular = b2bAll.filter(r=> String(r.rev_chrg||'').trim().toUpperCase()!=='Y');
+  const b2bRCM = b2bAll.filter(r=> String(r.rev_chrg||'').trim().toUpperCase()==='Y');
+
+  const BA = {...STD, orig_invoice_no:18, orig_invoice_dt:19};
+  const b2baAll = findSheet(wb,'B2BA') ? read2BTab(findSheet(wb,'B2BA'), BA) : [];
+
+  const CDNR_MAP = {cdnr_no:18, cdnr_dt:19, cdnr_type:20, gstin:4, name:6, rev_chrg:5, rate:11, tv:12, igst:13, cgst:14, sgst:15, cess:16, value:17, eligible_itc:24};
+  const cdnr = findSheet(wb,'CDNR') ? read2BTab(findSheet(wb,'CDNR'), CDNR_MAP) : [];
+
+  const IMPG_MAP = {port_code:18, shipbill_no:19, sb_dt:20, rate:11, tv:12, igst:13, cgst:14, sgst:15, cess:16, value:17, eligible_itc:21};
+  const impg = findSheet(wb,'IMPG') ? read2BTab(findSheet(wb,'IMPG'), IMPG_MAP) : [];
+
+  // apply amendments
+  function norm(v){ return v!==undefined && v!==null ? String(v).trim().toUpperCase() : ''; }
+  function dtISO(v){ return toISO(v); }
+  const amendIndex = {};
+  b2baAll.forEach(a=>{
+    const key = `${norm(a.gstin)}|${norm(a.orig_invoice_no)}|${dtISO(a.orig_invoice_dt)}`;
+    amendIndex[key] = a;
+  });
+  const matchedKeys = new Set();
+  const b2bFinal = b2bRegular.map(row=>{
+    const key = `${norm(row.gstin)}|${norm(row.invoice_no)}|${dtISO(row.invoice_dt)}`;
+    if(amendIndex[key]){ matchedKeys.add(key); return {...amendIndex[key], _amended:true}; }
+    return {...row, _amended:false};
+  });
+  const orphans = Object.keys(amendIndex).filter(k=>!matchedKeys.has(k)).map(k=>amendIndex[k]);
+
+  STATE.g2b = { b2bFinal, rcm: b2bRCM, cdnr, impg, b2baOrphans: orphans };
+
+  const stats = [
+    ['B2B Regular (amended)', b2bFinal.length],
+    ['B2B RCM section', b2bRCM.length],
+    ['B2BA amendments applied', b2baAll.length-orphans.length],
+    ['B2BA orphans (prior FY)', orphans.length],
+    ['CDNR rows', cdnr.length],
+    ['IMPG rows', impg.length],
+  ];
+  document.getElementById('gstr2bStats').innerHTML = stats.map(([lbl,num])=>
+    `<div class="stat"><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`).join('');
+
+  document.getElementById('step5').classList.remove('disabled');
+}
+
+/* ---------------- STEP 5: Matching engine ---------------- */
+function buildPRPool(){
+  return STATE.prLines.map(r=>({
+    gstin: normGSTIN(r.gstin), pan: panOf(r.gstin),
+    inv_raw: r.voucher_no, inv_norm: normInv(r.voucher_no || r.row_key),
+    date: r.date, party: r.party,
+    TV: r.TV, TAX: round2(r.I+r.C+r.S), IV: round2(r.TV+r.I+r.C+r.S),
+    I:r.I, C:r.C, S:r.S
+  }));
+}
+function build2BPool(){
+  const pool = [];
+  STATE.g2b.b2bFinal.forEach(r=>{
+    const tv=r.tv||0, ig=r.igst||0, cg=r.cgst||0, sg=r.sgst||0;
+    pool.push({gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.invoice_no, inv_norm:normInv(r.invoice_no),
+      date: toISO(r.invoice_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg});
+  });
+  STATE.g2b.cdnr.forEach(r=>{
+    const tv=r.tv||0, ig=r.igst||0, cg=r.cgst||0, sg=r.sgst||0;
+    pool.push({gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.cdnr_no, inv_norm:normInv(r.cdnr_no),
+      date: toISO(r.cdnr_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg});
+  });
+  return pool;
+}
+function build2BRcmPool(){
+  return STATE.g2b.rcm.map(r=>{
+    const tv=r.tv||0, ig=r.igst||0, cg=r.cgst||0, sg=r.sgst||0;
+    return {gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.invoice_no, inv_norm:normInv(r.invoice_no),
+      date: toISO(r.invoice_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg};
+  });
+}
+
+function runPasses(prItems, tbItems, tol){
+  let prRemaining = {}; prItems.forEach((p,i)=>prRemaining['p'+i]=p);
+  let tbRemaining = {}; tbItems.forEach((t,i)=>tbRemaining['t'+i]=t);
+  const matched = [];
+  const passCounts = {};
+
+  function indexBy(items, keyfn){
+    const idx = {};
+    Object.values(items).forEach(it=>{
+      const k = JSON.stringify(keyfn(it));
+      if(!idx[k]) idx[k]=[];
+      idx[k].push(it);
+    });
+    return idx;
+  }
+  function runExact(name, keyfn){
+    const tbIdx = indexBy(tbRemaining, keyfn);
+    let cnt=0;
+    Object.keys(prRemaining).forEach(pid=>{
+      const p = prRemaining[pid];
+      const k = JSON.stringify(keyfn(p));
+      const cands = (tbIdx[k]||[]).filter(c=>Object.values(tbRemaining).includes(c));
+      if(cands.length>0){
+        const t = cands[0];
+        matched.push({pr:p, tb:t, pass:name});
+        delete prRemaining[pid];
+        const tid = Object.keys(tbRemaining).find(k2=>tbRemaining[k2]===t);
+        delete tbRemaining[tid];
+        cnt++;
+      }
+    });
+    passCounts[name]=cnt;
+  }
+  function runTol(name, keyfn, amtfn){
+    const tbIdx = indexBy(tbRemaining, keyfn);
+    let cnt=0;
+    Object.keys(prRemaining).forEach(pid=>{
+      const p = prRemaining[pid];
+      const k = JSON.stringify(keyfn(p));
+      const cands = (tbIdx[k]||[]).filter(c=>Object.values(tbRemaining).includes(c));
+      let best=null;
+      for(const c of cands){ if(Math.abs(amtfn(p)-amtfn(c))<=tol){ best=c; break; } }
+      if(best){
+        matched.push({pr:p, tb:best, pass:name});
+        delete prRemaining[pid];
+        const tid = Object.keys(tbRemaining).find(k2=>tbRemaining[k2]===best);
+        delete tbRemaining[tid];
+        cnt++;
+      }
+    });
+    passCounts[name]=cnt;
+  }
+
+  runExact('P1: GSTIN+InvNo', x=>[x.gstin, x.inv_norm]);
+  runTol('P3: GSTIN+Date+Tax', x=>[x.gstin, x.date], x=>x.TAX);
+  runExact('P4: PAN+InvNo', x=>[x.pan, x.inv_norm]);
+  runTol('P5: GSTIN+TV', x=>[x.gstin], x=>x.TV);
+  runTol('P6: GSTIN+Tax', x=>[x.gstin], x=>x.TAX);
+  runTol('P7: PAN+Tax', x=>[x.pan], x=>x.TAX);
+  runTol('P8: GSTIN+IV', x=>[x.gstin], x=>x.IV);
+  runTol('P9: PAN+TV', x=>[x.pan], x=>x.TV);
+
+  return {matched, prOnly:Object.values(prRemaining), tbOnly:Object.values(tbRemaining), passCounts};
+}
+
+document.getElementById('btnRunMatch').addEventListener('click', function(){
+  const tol = parseFloat(document.getElementById('tolerance').value)||10;
+  const prPool = buildPRPool();
+  const tbPool = build2BPool();
+  const main = runPasses(prPool, tbPool, tol);
+
+  const rcmPool = build2BRcmPool();
+  const rcmCross = runPasses(main.prOnly, rcmPool, tol);
+
+  STATE.match = {
+    matched: main.matched, tbOnly: main.tbOnly, passCounts: main.passCounts,
+    rcmMatched: rcmCross.matched, prOnlyFinal: rcmCross.prOnly, rcm2bUnmatched: rcmCross.tbOnly,
+    rcmPassCounts: rcmCross.passCounts
+  };
+
+  const rows = [
+    ['Matched (PR = 2B)', STATE.match.matched.length],
+    ['ITC at Risk (PR only, final)', STATE.match.prOnlyFinal.length],
+    ['Unclaimed ITC (2B only)', STATE.match.tbOnly.length],
+    ['RCM recovered via cross-match', STATE.match.rcmMatched.length],
+    ['RCM filed by supplier, not booked', STATE.match.rcm2bUnmatched.length],
+  ];
+  let html = '<div class="stat-grid">' + rows.map(([l,n])=>`<div class="stat"><div class="num">${n}</div><div class="lbl">${l}</div></div>`).join('') + '</div>';
+  html += '<p class="sub" style="margin-top:14px;"><b>Pass-wise match counts (main reconciliation):</b></p><ul style="font-size:12.5px;">';
+  Object.entries(STATE.match.passCounts).forEach(([k,v])=>{ html += `<li>${k}: <b>${v}</b></li>`; });
+  html += '</ul>';
+  document.getElementById('matchResults').innerHTML = html;
+
+  buildGstinSummary();
+  document.getElementById('step6').classList.remove('disabled');
+});
+
+/* ---------------- STEP 6: GSTIN Summary (unmatched only) ---------------- */
+function buildGstinSummary(){
+  const prByG = {}, tbByG = {};
+  STATE.match.prOnlyFinal.forEach(r=>{
+    const g = r.gstin || `NOGSTIN|${r.party}`;
+    if(!prByG[g]) prByG[g] = {name:r.party, count:0, TV:0, TAX:0};
+    prByG[g].count++; prByG[g].TV+=r.TV; prByG[g].TAX+=r.TAX;
+  });
+  STATE.match.tbOnly.forEach(r=>{
+    const g = r.gstin || `NOGSTIN|${r.party}`;
+    if(!tbByG[g]) tbByG[g] = {name:r.party, count:0, TV:0, TAX:0};
+    tbByG[g].count++; tbByG[g].TV+=r.TV; tbByG[g].TAX+=r.TAX;
+  });
+  const allG = new Set([...Object.keys(prByG), ...Object.keys(tbByG)]);
+  const summary = [];
+  allG.forEach(g=>{
+    const p = prByG[g]||{name:'',count:0,TV:0,TAX:0};
+    const t = tbByG[g]||{name:'',count:0,TV:0,TAX:0};
+    summary.push({
+      gstin: g.startsWith('NOGSTIN')?'':g, name: p.name||t.name,
+      pr_count:p.count, pr_tv:round2(p.TV), pr_tax:round2(p.TAX),
+      tb_count:t.count, tb_tv:round2(t.TV), tb_tax:round2(t.TAX),
+      diff_tax: round2(p.TAX-t.TAX)
+    });
+  });
+  summary.sort((a,b)=>Math.abs(b.diff_tax)-Math.abs(a.diff_tax));
+  STATE.gstinSummary = summary;
+
+  const genuineGap = summary.filter(s=>Math.abs(s.diff_tax)>10).length;
+  let html = `<div class="stat-grid">
+    <div class="stat"><div class="num">${summary.length}</div><div class="lbl">Unique GSTINs (remainder)</div></div>
+    <div class="stat"><div class="num">${summary.length-genuineGap}</div><div class="lbl">Net to ~0 (noise)</div></div>
+    <div class="stat"><div class="num">${genuineGap}</div><div class="lbl">Genuine gap</div></div>
+  </div>`;
+  document.getElementById('gstinSummaryPreview').innerHTML = html;
+}
+
+/* ---------------- FINAL: build workbook via ExcelJS ---------------- */
+document.getElementById('btnDownload').addEventListener('click', async function(){
+  const wb = new ExcelJS.Workbook();
+  const moneyFmt = '#,##0.00;(#,##0.00);"-"';
+  const dateFmt = 'dd-mm-yyyy';
+  const headerFill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF1F4E78'}};
+  const headerFont = {bold:true, color:{argb:'FFFFFFFF'}};
+
+  function styleHeader(ws, rowIdx){
+    ws.getRow(rowIdx).eachCell(cell=>{ cell.fill = headerFill; cell.font = headerFont; cell.alignment={horizontal:'center', wrapText:true}; });
+  }
+  function addDateCell(row, col, iso){
+    if(!iso) return;
+    const [y,m,d] = iso.split('-').map(Number);
+    const cell = row.getCell(col);
+    cell.value = new Date(y, m-1, d);
+    cell.numFmt = dateFmt;
+  }
+
+  // Sheet: Purchase Register (Final)
+  {
+    const ws = wb.addWorksheet('Purchase Register (Final)');
+    ws.addRow(['Purchase Register — Final (ITC)']);
+    ws.addRow(['Built from Input Tax Ledgers | GSTIN-present + reclassified rows, deduplicated']);
+    ws.addRow([]);
+    const hdr = ws.addRow(['Date','Party Name','GSTIN','Voucher Type','Voucher No.','TV','IGST','CGST','SGST','Invoice Value','Source File(s)']);
+    styleHeader(ws, hdr.number);
+    STATE.prLines.sort((a,b)=> (a.date||'').localeCompare(b.date||''));
+    STATE.prLines.forEach(p=>{
+      const row = ws.addRow(['', p.party, p.gstin, p.voucher_type, p.voucher_no, p.TV, p.I, p.C, p.S, round2(p.TV+p.I+p.C+p.S), p.source_files]);
+      addDateCell(row,1,p.date);
+      [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    ws.columns = [{width:13},{width:26},{width:17},{width:20},{width:16},{width:12},{width:10},{width:10},{width:10},{width:13},{width:26}];
+  }
+
+  // Sheet: Monthly Summary of ITC (FY Apr-Mar ordered)
+  {
+    const ws = wb.addWorksheet('Monthly Summary of ITC');
+    ws.addRow(['Monthly Summary of ITC (Final Purchase Register)']);
+    ws.addRow(['FY-ordered Apr to Mar']);
+    ws.addRow([]);
+    const hdr = ws.addRow(['Month','Invoice Count','Taxable Value (TV)','IGST','CGST','SGST','Invoice Value (IV)']);
+    styleHeader(ws, hdr.number);
+
+    const monthNames = {4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec',1:'Jan',2:'Feb',3:'Mar'};
+    const monthly = {};
+    const fyStartCounts = {};
+    STATE.prLines.forEach(p=>{
+      if(!p.date) return;
+      const [y,m] = p.date.split('-').map(Number);
+      const fyStartYear = m>=4 ? y : y-1;
+      fyStartCounts[fyStartYear] = (fyStartCounts[fyStartYear]||0)+1;
+      const key = `${y}-${m}`;
+      if(!monthly[key]) monthly[key] = {count:0,TV:0,I:0,C:0,S:0};
+      monthly[key].count++; monthly[key].TV+=p.TV; monthly[key].I+=p.I; monthly[key].C+=p.C; monthly[key].S+=p.S;
+    });
+    // Use the FY that the MAJORITY of rows fall in — a single outlier-dated row
+    // must not be allowed to drag the whole 12-month window to the wrong year.
+    let fyStart = null, bestCount = -1;
+    Object.keys(fyStartCounts).forEach(y=>{
+      if(fyStartCounts[y] > bestCount){ bestCount = fyStartCounts[y]; fyStart = +y; }
+    });
+    if(fyStart===null) fyStart = new Date().getFullYear();
+    const fyMonths = [];
+    for(let i=0;i<12;i++){
+      const m = ((3+i)%12)+1; // 4,5,...,12,1,2,3
+      const y = m>=4 ? fyStart : fyStart+1;
+      fyMonths.push([y,m]);
+    }
+    fyMonths.forEach(([y,m])=>{
+      const stats = monthly[`${y}-${m}`] || {count:0,TV:0,I:0,C:0,S:0};
+      const iv = round2(stats.TV+stats.I+stats.C+stats.S);
+      const row = ws.addRow([`${monthNames[m]}-${String(y).slice(2)}`, stats.count, round2(stats.TV), round2(stats.I), round2(stats.C), round2(stats.S), iv]);
+      [3,4,5,6,7].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    const totalRow = ws.addRow(['Grand Total',
+      `=SUM(B5:B${ws.lastRow.number})`, `=SUM(C5:C${ws.lastRow.number})`, `=SUM(D5:D${ws.lastRow.number})`,
+      `=SUM(E5:E${ws.lastRow.number})`, `=SUM(F5:F${ws.lastRow.number})`, `=SUM(G5:G${ws.lastRow.number})`]);
+    totalRow.eachCell(cell=>{ cell.font={bold:true}; });
+    [3,4,5,6,7].forEach(c=>totalRow.getCell(c).numFmt=moneyFmt);
+
+    const inWindowYears = new Set(fyMonths.map(([y])=>y));
+    const outlierRows = STATE.prLines.filter(p=>{
+      if(!p.date) return false;
+      const [y,m] = p.date.split('-').map(Number);
+      return !inWindowYears.has(m>=4 ? y : y-1);
+    });
+    if(outlierRows.length>0){
+      const outTV = round2(outlierRows.reduce((s,r)=>s+r.TV+r.I+r.C+r.S,0));
+      const noteRow = ws.addRow([`Note: ${outlierRows.length} row(s) dated outside this FY window (TV+Tax ₹${outTV.toLocaleString('en-IN')}) are excluded from this table — check dates on those rows in Purchase Register (Final).`]);
+      noteRow.getCell(1).font = {italic:true, color:{argb:'FFC00000'}};
+    }
+    ws.columns = [{width:12},{width:14},{width:16},{width:14},{width:14},{width:14},{width:16}];
+  }
+
+  // Sheet: Category Summary (ITC, Import ITC, Reversal, RCM, Cash Payment, Offset)
+  {
+    const ws = wb.addWorksheet('Category Summary');
+    ws.addRow(['Summary — ITC, Import ITC, Reversal, RCM, Cash Payment, Offset']);
+    ws.addRow(['One row per register/category']);
+    ws.addRow([]);
+    const hdr = ws.addRow(['Category','Row Count','Taxable Value (TV)','IGST','CGST','SGST']);
+    styleHeader(ws, hdr.number);
+    function totals(rows){
+      return {count:rows.length, TV:rows.reduce((s,r)=>s+r.TV,0), I:rows.reduce((s,r)=>s+r.I,0),
+              C:rows.reduce((s,r)=>s+r.C,0), S:rows.reduce((s,r)=>s+r.S,0)};
+    }
+    const catDefs = [
+      ['Normal ITC (Purchase Register Final)', STATE.prLines],
+      ['Import ITC', STATE.buckets['Import ITC']],
+      ['Reversal / P&L Expense', STATE.buckets['Reversal/P&L Expense']],
+      ['RCM', STATE.buckets['RCM']],
+      ['GST Cash Payment to Department', STATE.buckets['GST Cash Payment to Department']],
+      ['Offset - Ignore (excluded)', STATE.buckets['Offset - Ignore']],
+    ];
+    catDefs.forEach(([label, rows])=>{
+      const t = totals(rows);
+      const row = ws.addRow([label, t.count, round2(t.TV), round2(t.I), round2(t.C), round2(t.S)]);
+      [3,4,5,6].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    ws.columns = [{width:36},{width:12},{width:16},{width:14},{width:14},{width:14}];
+  }
+
+  function addRegisterSheet(name, title, subtitle, rows){
+    const ws = wb.addWorksheet(name);
+    ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
+    const hdr = ws.addRow(['Date','Party','GSTIN','Voucher Type','Voucher No.','Source File','TV','I','C','S']);
+    styleHeader(ws, hdr.number);
+    rows.forEach(r=>{
+      const row = ws.addRow(['', r.party, r.gstin, r.voucher_type, r.voucher_no, r.source_file, r.TV, r.I, r.C, r.S]);
+      addDateCell(row,1,r.date);
+      [7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    ws.columns = [{width:13},{width:26},{width:17},{width:20},{width:16},{width:16},{width:12},{width:10},{width:10},{width:10}];
+  }
+  addRegisterSheet('Import ITC Register','Import ITC Register','Import-of-goods ITC — matches 2B IMPG', STATE.buckets['Import ITC']);
+  addRegisterSheet('Reversal-P&L Register','GST Reversal / P&L Expense','Not part of ITC claim, kept for audit', STATE.buckets['Reversal/P&L Expense']);
+  addRegisterSheet('RCM Register (Books)','RCM Register — as booked','From ledger classification', STATE.buckets['RCM']);
+  addRegisterSheet('GST Cash Payment Register','GST Cash Payment to Department','Direct cash payments, not ITC claim', STATE.buckets['GST Cash Payment to Department']);
+  addRegisterSheet('Offset Log (Audit)','Offset — Ignored','Month-end GST set-off/closing entries excluded', STATE.buckets['Offset - Ignore']);
+
+  // Reconciliation results
+  function addMatchPairSheet(name, title, subtitle, pairs){
+    const ws = wb.addWorksheet(name);
+    ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
+    const hdr = ws.addRow(['Date','Party (PR)','GSTIN','PR Inv No.','2B Inv No.','PR TV','2B TV','PR Tax','2B Tax','Tax Diff','Match Pass']);
+    styleHeader(ws, hdr.number);
+    pairs.forEach(m=>{
+      const row = ws.addRow(['', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.tb.inv_raw, m.pr.TV, m.tb.TV, m.pr.TAX, m.tb.TAX, round2(m.pr.TAX-m.tb.TAX), m.pass]);
+      addDateCell(row,1,m.pr.date);
+      [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:20}];
+  }
+  function addSoloSheet(name, title, subtitle, rows){
+    const ws = wb.addWorksheet(name);
+    ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
+    const hdr = ws.addRow(['Date','Party','GSTIN','Invoice No.','TV','I','C','S','TAX']);
+    styleHeader(ws, hdr.number);
+    rows.forEach(r=>{
+      const row = ws.addRow(['', r.party, r.gstin, r.inv_raw, r.TV, r.I, r.C, r.S, r.TAX]);
+      addDateCell(row,1,r.date);
+      [5,6,7,8,9].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    ws.columns = [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12}];
+  }
+  addMatchPairSheet('Matched Detail','Matched — PR = GSTR-2B', `${STATE.match.matched.length} invoices matched`, STATE.match.matched);
+  addSoloSheet('ITC at Risk (PR Only)','ITC at Risk','In PR, not in 2B (post RCM cross-match)', STATE.match.prOnlyFinal);
+  addSoloSheet('Unclaimed ITC (2B Only)','Unclaimed ITC','In 2B, not in PR', STATE.match.tbOnly);
+  addMatchPairSheet('RCM Recovered','RCM Cross-Match Recovered','PR-only rows that matched 2B RCM section', STATE.match.rcmMatched);
+  addSoloSheet('RCM Not Booked in PR','RCM — filed, not booked','Genuine compliance gap', STATE.match.rcm2bUnmatched);
+
+  // GSTIN Summary
+  {
+    const ws = wb.addWorksheet('GSTIN Summary (Unmatched)');
+    ws.addRow(['GSTIN-wise Summary — Unmatched Remainder Only']);
+    ws.addRow(['ITC at Risk + Unclaimed ITC — Matched excluded']);
+    ws.addRow([]);
+    const hdr = ws.addRow(['GSTIN','Party Name','PR Count','PR TV','PR Tax','2B Count','2B TV','2B Tax','Tax Diff','Status']);
+    styleHeader(ws, hdr.number);
+    STATE.gstinSummary.forEach(s=>{
+      const status = Math.abs(s.diff_tax)<=10 ? 'Nets to ~0' : 'Genuine gap';
+      const row = ws.addRow([s.gstin, s.name, s.pr_count, s.pr_tv, s.pr_tax, s.tb_count, s.tb_tv, s.tb_tax, s.diff_tax, status]);
+      [4,5,7,8,9].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    ws.columns = [{width:17},{width:28},{width:10},{width:14},{width:13},{width:10},{width:14},{width:13},{width:13},{width:14}];
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'ITC_GSTR2B_Reconciliation.xlsx';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
