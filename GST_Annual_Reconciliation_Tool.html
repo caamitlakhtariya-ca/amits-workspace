@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GST Annual Reconciliation Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+<style>
+:root{
+  --charcoal:#16324A; --charcoal2:#1D6FA5;
+  --blue-d:#1D6FA5; --blue-l:#D6E8F3;
+  --olive-d:#2C8C86; --olive-l:#D7ECE8;
+  --terra-d:#B5545B; --terra-l:#F3DEE0;
+  --gray-d:#5B6B75;  --gray-l:#E7EDF0;
+  --total:#E7EDF0; --note:#EAF3F0; --inputbg:#F3F9F8;
+  --bg:#f4f8f9; --card:#ffffff; --border:#dbe6ea; --text:#1c2b33; --muted:#5B6B75;
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);}
+header{background:linear-gradient(135deg,var(--charcoal),var(--charcoal2));color:#fff;padding:20px 28px;}
+header h1{margin:0;font-size:20px;font-weight:600;}
+header p{margin:4px 0 0;font-size:13px;color:#dcecf5;}
+footer{background:#fff;border-top:1px solid var(--border);padding:16px 28px;margin-top:10px;text-align:center;font-size:11.5px;color:var(--muted);line-height:1.7;}
+footer .firm{font-size:13px;font-weight:700;color:var(--charcoal);}
+.wrap{max-width:1300px;margin:0 auto;padding:20px 24px 60px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:18px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+.card h2{font-size:14px;margin:0 0 4px;color:var(--charcoal);}
+.card .sub{font-size:12px;color:var(--muted);margin-bottom:12px;}
+.step-badge{display:inline-block;background:var(--blue-d);color:#fff;font-size:11px;font-weight:700;border-radius:50%;width:20px;height:20px;line-height:20px;text-align:center;margin-right:8px;}
+.uploadrow{display:flex;gap:14px;flex-wrap:wrap;}
+.uploadbox{flex:1;min-width:260px;border:1.5px dashed var(--border);border-radius:8px;padding:14px;background:#fbfbfa;}
+.uploadbox label{display:block;font-size:12.5px;font-weight:600;color:var(--charcoal2);margin-bottom:6px;}
+.uploadbox input[type=file]{font-size:12px;width:100%;}
+.status{font-size:11.5px;margin-top:6px;color:var(--muted);}
+.status.ok{color:var(--olive-d);font-weight:600;}
+.status.err{color:#b3392b;font-weight:600;}
+table{border-collapse:collapse;width:100%;font-size:12px;}
+th,td{border:1px solid var(--border);padding:5px 7px;text-align:right;}
+th{font-weight:600;color:#fff;position:sticky;top:0;}
+td.lbl,th.lbl{text-align:left;font-weight:600;}
+tr.total td{font-weight:700;background:var(--total);}
+input.cell{width:82px;border:1px solid #cfd2ce;border-radius:4px;padding:3px 4px;font-size:11.5px;text-align:right;background:var(--inputbg);}
+input.cell:focus{outline:2px solid var(--blue-d);}
+.tablewrap{overflow-x:auto;}
+.manualgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 16px;}
+.mfield label{display:block;font-size:11.5px;color:var(--charcoal2);font-weight:600;margin-bottom:3px;}
+.mfield input{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;background:var(--inputbg);}
+button.primary{background:var(--blue-d);color:#fff;border:none;padding:11px 22px;border-radius:7px;font-size:13.5px;font-weight:600;cursor:pointer;}
+button.primary:hover{background:#3d4a63;}
+button.secondary{background:var(--olive-d);color:#fff;border:none;padding:9px 18px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;margin-left:8px;}
+.dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0 20px;}
+.kpi{border-radius:9px;padding:14px 16px;color:#fff;}
+.kpi .v{font-size:19px;font-weight:700;}
+.kpi .l{font-size:11px;opacity:.9;}
+.kpi.a{background:var(--charcoal2);} .kpi.b{background:var(--blue-d);} .kpi.c{background:var(--olive-d);} .kpi.d{background:var(--terra-d);}
+.diffcell{font-weight:700;color:var(--terra-d);}
+.diffcell.zero{color:var(--olive-d);}
+.hint{font-size:11px;color:var(--muted);margin-top:4px;}
+.section-title{font-size:13px;font-weight:700;color:var(--charcoal);margin:16px 0 8px;border-left:4px solid var(--blue-d);padding-left:8px;}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-top:8px;}
+.legend span{display:inline-flex;align-items:center;gap:5px;}
+.swatch{width:12px;height:12px;border-radius:3px;display:inline-block;}
+th.hd-return{background:var(--blue-d);} th.hd-books{background:var(--olive-d);} th.hd-diff{background:var(--terra-d);}
+th.hd-neutral{background:var(--charcoal2);} th.hd-cash{background:var(--gray-d);}
+td.d-return{background:var(--blue-l);} td.d-books{background:var(--olive-l);} td.d-diff{background:var(--terra-l);}
+td.d-cash{background:var(--gray-l);}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand-left">
+    <h1>GST Annual Reconciliation Tool</h1>
+    <p>Output · RCM · Input(ITC) · Cash &amp; Credit Ledger · Payment Summary — Return vs Books, fully interlinked</p>
+  </div>
+</header>
+<div class="wrap">
+
+  <div class="card">
+    <h2><span class="step-badge">1</span>GST Software — Annual 3B "Yearly Summary" export</h2>
+    <div class="sub">Tabs: Outward, Inward, Payment, Interest. Required.</div>
+    <input type="file" id="fileYearly" accept=".xlsx,.xls">
+    <div class="status" id="statYearly">No file loaded</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-badge">2</span>Cash / Credit / Reversal Ledger export</h2>
+    <div class="sub">Tabs: ITC, CASH, CREDITREVERSAL. Required.</div>
+    <input type="file" id="fileLedger" accept=".xlsx,.xls">
+    <div class="status" id="statLedger">No file loaded</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-badge">3</span>Books-side data (optional uploads)</h2>
+    <div class="sub">GSTR-1 vs SR tool output (Output/RCM books) and GSTR-2B vs ITC tool output (Input books). If not uploaded, the grid stays editable at zero.</div>
+    <div class="uploadrow">
+      <div class="uploadbox">
+        <label>GSTR-1 vs SR tool output</label>
+        <input type="file" id="fileSR" accept=".xlsx,.xls">
+        <div class="status" id="statSR">Not uploaded</div>
+      </div>
+      <div class="uploadbox">
+        <label>GSTR-2B vs ITC tool output</label>
+        <input type="file" id="filePR" accept=".xlsx,.xls">
+        <div class="status" id="statPR">Not uploaded</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-badge">4</span>Build the reconciliation</h2>
+    <button class="primary" id="btnBuild">Load / Build Tables</button>
+    <div class="hint">Loads everything above into editable tables below — nothing is final until you click Generate.</div>
+  </div>
+
+  <div id="tables"></div>
+
+  <div class="card" id="manualCard" style="display:none;">
+    <h2><span class="step-badge">5</span>Workpaper figures (keyed in manually)</h2>
+    <div class="sub" style="background:var(--note);padding:10px 12px;border-radius:6px;color:#4a4020;">
+      <b>Sign convention (one rule, applies to every field below):</b> positive = Payable (you owe the department); negative = Credit (in your favour). So a Credit balance of ₹2,14,021 is entered as <b>-214021</b>. GST Payable itself is computed and always shown positive. Payment Made is entered as a positive cash-paid amount — the tool subtracts it for you.
+    </div>
+    <div class="manualgrid" style="margin-top:12px;">
+      <div class="mfield"><label>Opening Balance (− if Credit, + if Payable)</label><input type="number" id="mOpening" value="0"></div>
+      <div class="mfield"><label>Payment Made (Cash) — enter positive, reduces payable</label><input type="number" id="mPayment" value="0"></div>
+      <div class="mfield"><label>Adjustment / Reversal (+ increases payable, − decreases)</label><input type="number" id="mReversal" value="0"></div>
+      <div class="mfield"><label>Closing Balance per Books/Portal (− if Credit, + if Payable)</label><input type="number" id="mClosing" value="0"></div>
+      <div class="mfield"><label>Payment made after 31-March — enter positive (already counted in Payment Made above)</label><input type="number" id="mPayAfterMar" value="0"></div>
+      <div class="mfield"><label>ITC reversed &amp; booked as expense (₹, IGST)</label><input type="number" id="mAdjExpI" value="0"></div>
+      <div class="mfield"><label>ITC reversed &amp; booked as expense (₹, CGST)</label><input type="number" id="mAdjExpC" value="0"></div>
+      <div class="mfield"><label>ITC reversed &amp; booked as expense (₹, SGST)</label><input type="number" id="mAdjExpS" value="0"></div>
+      <div class="mfield"><label>Other ITC adjustments (₹, IGST)</label><input type="number" id="mAdjOthI" value="0"></div>
+      <div class="mfield"><label>Other ITC adjustments (₹, CGST)</label><input type="number" id="mAdjOthC" value="0"></div>
+      <div class="mfield"><label>Other ITC adjustments (₹, SGST)</label><input type="number" id="mAdjOthS" value="0"></div>
+    </div>
+  </div>
+
+  <div class="card" id="genCard" style="display:none;text-align:center;">
+    <button class="primary" id="btnGenerate">Generate Summary</button>
+  </div>
+
+  <div id="output"></div>
+</div>
+
+<script>
+const MONTHS = ["April","May","June","July","August","September","October","November","December","January","February","March"];
+const MONTH_ABBR = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
+const FY_PERIODS = {"042025":"April","052025":"May","062025":"June","072025":"July","082025":"August",
+  "092025":"September","102025":"October","112025":"November","122025":"December",
+  "012026":"January","022026":"February","032026":"March"};
+let state = { yearly:null, ledger:null, srData:null, prData:null, meta:{} };
+
+function readWorkbook(file){
+  return new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = e => { try { resolve(XLSX.read(e.target.result,{type:"array",cellDates:true})); } catch(err){ reject(err); } };
+    r.onerror = reject;
+    r.readAsArrayBuffer(file);
+  });
+}
+function sheetRows(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
+function num(v){ return (typeof v==="number") ? v : (parseFloat(v)||0); }
+function monthFromLabel(lbl){
+  if(!lbl) return null;
+  const s = String(lbl).trim().toUpperCase();
+  for(let i=0;i<MONTH_ABBR.length;i++){ if(s.indexOf(MONTH_ABBR[i].toUpperCase())===0) return MONTHS[i]; }
+  return null;
+}
+function blankMonthly(fields){ const o={}; MONTHS.forEach(m=>{ o[m]={}; fields.forEach(f=>o[m][f]=0); }); return o; }
+
+// ---------- Outward tab: Output (Table 3.1a) + RCM (Table 3.1d) ----------
+function parseOutward(wb){
+  const ws = wb.Sheets["Outward"]; if(!ws) return null;
+  const rows = sheetRows(ws);
+  let hdr=-1;
+  for(let i=0;i<rows.length;i++){ if(rows[i] && String(rows[i][1]||"").trim().toUpperCase()==="PERIOD"){ hdr=i; break; } }
+  if(hdr<0) return null;
+  const out={}, rcm={};
+  for(let i=hdr+1;i<rows.length;i++){
+    const row=rows[i]; if(!row) continue;
+    const label=row[1]; if(!label) continue;
+    if(String(label).toUpperCase().indexOf("TOTAL")===0) break;
+    const m=monthFromLabel(label); if(!m) continue;
+    out[m]={tv:num(row[2]),igst:num(row[3]),cgst:num(row[4]),sgst:num(row[5])};
+    rcm[m]={tv:num(row[11]),igst:num(row[12]),cgst:num(row[13]),sgst:num(row[14])};
+  }
+  return {out,rcm};
+}
+
+// ---------- Inward tab: All Other ITC (4A5, gross), RCM ITC ref, ITC Reversed (Rule + Others) ----------
+function parseInward(wb){
+  const ws = wb.Sheets["Inward"]; if(!ws) return null;
+  const rows = sheetRows(ws);
+  let hdr=-1;
+  for(let i=0;i<rows.length;i++){ if(rows[i] && String(rows[i][1]||"").trim().toUpperCase()==="PERIOD"){ hdr=i; break; } }
+  if(hdr<0) return null;
+  const gross={}, rcmRef={};
+  for(let i=hdr+1;i<rows.length;i++){
+    const row=rows[i]; if(!row) continue;
+    const label=row[1]; if(!label) continue;
+    if(String(label).toUpperCase().indexOf("TOTAL")===0) break;
+    const m=monthFromLabel(label); if(!m) continue;
+    gross[m]={igst:num(row[14]),cgst:num(row[15]),sgst:num(row[16])};
+    rcmRef[m]={igst:num(row[6]),cgst:num(row[7]),sgst:num(row[8])};
+  }
+  // ITC REVERSED section — search for the marker text, then find its own PERIOD header below it
+  let revMarker=-1;
+  for(let i=hdr;i<rows.length;i++){ if(rows[i] && String(rows[i][1]||"").toUpperCase().indexOf("ITC REVERSED")>=0){ revMarker=i; break; } }
+  const reversed = {};
+  MONTHS.forEach(m=> reversed[m]={rule:{igst:0,cgst:0,sgst:0}, others:{igst:0,cgst:0,sgst:0}});
+  if(revMarker>=0){
+    let rhdr=-1;
+    for(let i=revMarker;i<rows.length;i++){ if(rows[i] && String(rows[i][1]||"").trim().toUpperCase()==="PERIOD"){ rhdr=i; break; } }
+    if(rhdr>=0){
+      for(let i=rhdr+1;i<rows.length;i++){
+        const row=rows[i]; if(!row) continue;
+        const label=row[1]; if(!label) continue;
+        if(String(label).toUpperCase().indexOf("TOTAL")===0) break;
+        const m=monthFromLabel(label); if(!m) continue;
+        reversed[m] = {
+          rule:   {igst:num(row[2]), cgst:num(row[3]), sgst:num(row[4])},
+          others: {igst:num(row[6]), cgst:num(row[7]), sgst:num(row[8])}
+        };
+      }
+    }
+  }
+  return {gross, rcmRef, reversed};
+}
+
+// ---------- Payment tab ----------
+function parsePayment(wb){
+  const ws = wb.Sheets["Payment"]; if(!ws) return null;
+  const rows = sheetRows(ws);
+  let hdr=-1;
+  for(let i=0;i<rows.length;i++){ if(rows[i] && String(rows[i][1]||"").trim().toUpperCase()==="PERIOD"){ hdr=i; break; } }
+  if(hdr<0) return null;
+  const monthly={};
+  for(let i=hdr+1;i<rows.length;i++){
+    const row=rows[i]; if(!row) continue;
+    const label=row[1]; if(!label) continue;
+    if(String(label).toUpperCase().indexOf("TOTAL")===0) break;
+    const m=monthFromLabel(label); if(!m) continue;
+    const v = row.map(x=>num(x));
+    monthly[m] = {
+      payable: {igst:v[2], cgst:v[9], sgst:v[16]},
+      paidITC: {igst:v[3]+v[4]+v[5], cgst:v[10]+v[11], sgst:v[17]+v[18]},
+      cashNormal: {igst:v[6], cgst:v[12], sgst:v[19]},
+      rcmCash: {igst:v[27], cgst:v[28], sgst:v[29]}
+    };
+  }
+  return monthly;
+}
+
+// ---------- Interest tab: cash incl RCM cross-check ----------
+function parseInterest(wb){
+  const ws = wb.Sheets["Interest"]; if(!ws) return null;
+  const rows = sheetRows(ws);
+  let hdr=-1;
+  for(let i=0;i<rows.length;i++){ if(rows[i] && String(rows[i][1]||"").trim().toUpperCase()==="PERIOD"){ hdr=i; break; } }
+  if(hdr<0) return null;
+  const monthly={};
+  for(let i=hdr+1;i<rows.length;i++){
+    const row=rows[i]; if(!row) continue;
+    const label=row[1]; if(!label) continue;
+    if(String(label).toUpperCase().indexOf("TOTAL")===0) break;
+    const m=monthFromLabel(label); if(!m) continue;
+    const v = row.map(x=>num(x));
+    monthly[m] = { cashInclRCM: {igst:v[2], cgst:v[3], sgst:v[4]} };
+  }
+  return monthly;
+}
+
+// ---------- ITC tab (Credit Ledger): Cr/Dr pairs by FY period ----------
+function parseCreditLedger(wb){
+  const ws = wb.Sheets["ITC"]; if(!ws) return null;
+  const rows = sheetRows(ws);
+  const byPeriod = {};
+  for(let i=0;i<rows.length;i++){
+    const row=rows[i]; if(!row) continue;
+    const period = row[3]; if(!period) continue;
+    (byPeriod[period] = byPeriod[period]||[]).push(row);
+  }
+  const monthly = {};
+  Object.keys(FY_PERIODS).forEach(period=>{
+    const m = FY_PERIODS[period];
+    const entries = byPeriod[period]||[];
+    const cr = entries.find(r=>String(r[5]).trim()==="Cr");
+    const dr = entries.find(r=>String(r[5]).trim()==="Dr");
+    monthly[m] = {
+      accrued: cr? {igst:num(cr[6]),cgst:num(cr[7]),sgst:num(cr[8])} : {igst:0,cgst:0,sgst:0},
+      utilised: dr? {igst:num(dr[6]),cgst:num(dr[7]),sgst:num(dr[8])} : {igst:0,cgst:0,sgst:0},
+      closing: dr? {igst:num(dr[11]),cgst:num(dr[12]),sgst:num(dr[13])} : null
+    };
+  });
+  const prefy = byPeriod["032025"]||[];
+  const prefyDr = prefy.find(r=>String(r[5]).trim()==="Dr");
+  const opening = prefyDr? {igst:num(prefyDr[11]),cgst:num(prefyDr[12]),sgst:num(prefyDr[13])} : {igst:0,cgst:0,sgst:0};
+  return {monthly, opening};
+}
+
+// ---------- CASH tab: cash ledger + Interest/Penalty/Fees/Others sub-ledgers, FY-filtered by pay date ----------
+function excelSerialToDate(v){
+  if(v instanceof Date) return v;
+  if(typeof v === "number"){ return new Date(Math.round((v-25569)*86400*1000)); }
+  return null;
+}
+function parseCash(wb){
+  const ws = wb.Sheets["CASH"]; if(!ws) return null;
+  const rows = sheetRows(ws);
+  const fyStart = new Date(2025,3,1), fyEnd = new Date(2026,2,31,23,59,59);
+  const monthLookup = {4:"April",5:"May",6:"June",7:"July",8:"August",9:"September",10:"October",11:"November",12:"December",1:"January",2:"February",3:"March"};
+
+  let cashOpening = {igst:0,cgst:0,sgst:0};
+  let lastBefore = null;
+  const cashMonthly = {}; MONTHS.forEach(m=> cashMonthly[m]={cr:{igst:0,cgst:0,sgst:0}, dr:{igst:0,cgst:0,sgst:0}, closing:null});
+  const fpOpening = {igst:0,cgst:0,sgst:0};
+  const fpMonthly = {}; MONTHS.forEach(m=> fpMonthly[m]={cr:{igst:0,cgst:0,sgst:0}, dr:{igst:0,cgst:0,sgst:0}, closing:null});
+  let fpLastBefore=[0,0,0];
+
+  for(let i=0;i<rows.length;i++){
+    const row=rows[i]; if(!row) continue;
+    const d = excelSerialToDate(row[1]); if(!d) continue;
+    const v = row.map(x=>num(x));
+    if(d < fyStart){
+      lastBefore = {igst:v[10],cgst:v[11],sgst:v[12]};
+      fpLastBefore = [v[14]+v[22]+v[30]+v[38], v[15]+v[23]+v[31]+v[39], v[16]+v[24]+v[32]+v[40]];
+      continue;
+    }
+    if(d > fyEnd) continue;
+    const m = monthLookup[d.getMonth()+1];
+    const crdr = String(row[5]||"").trim();
+    const tax = {igst:v[6],cgst:v[7],sgst:v[8]};
+    const combined = {igst:v[14]+v[22]+v[30]+v[38], cgst:v[15]+v[23]+v[31]+v[39], sgst:v[16]+v[24]+v[32]+v[40]};
+    const combinedBal = {igst:v[18]+v[26]+v[34]+v[42], cgst:v[19]+v[27]+v[35]+v[43], sgst:v[20]+v[28]+v[36]+v[44]};
+    if(crdr==="Cr"){ cashMonthly[m].cr.igst+=tax.igst; cashMonthly[m].cr.cgst+=tax.cgst; cashMonthly[m].cr.sgst+=tax.sgst;
+                      fpMonthly[m].cr.igst+=combined.igst; fpMonthly[m].cr.cgst+=combined.cgst; fpMonthly[m].cr.sgst+=combined.sgst; }
+    else { cashMonthly[m].dr.igst+=tax.igst; cashMonthly[m].dr.cgst+=tax.cgst; cashMonthly[m].dr.sgst+=tax.sgst;
+           fpMonthly[m].dr.igst+=combined.igst; fpMonthly[m].dr.cgst+=combined.cgst; fpMonthly[m].dr.sgst+=combined.sgst; }
+    cashMonthly[m].closing = {igst:v[10],cgst:v[11],sgst:v[12]};
+    if(combined.igst||combined.cgst||combined.sgst||combinedBal.igst||combinedBal.cgst||combinedBal.sgst){
+      fpMonthly[m].closing = combinedBal;
+    }
+  }
+  if(lastBefore) cashOpening = lastBefore;
+  fpOpening.igst=fpLastBefore[0]; fpOpening.cgst=fpLastBefore[1]; fpOpening.sgst=fpLastBefore[2];
+
+  // fill-forward closing balances
+  let lastC = cashOpening;
+  MONTHS.forEach(m=>{ if(cashMonthly[m].closing===null) cashMonthly[m].closing=lastC; else lastC=cashMonthly[m].closing; });
+  let lastF = fpOpening;
+  MONTHS.forEach(m=>{ if(fpMonthly[m].closing===null) fpMonthly[m].closing=lastF; else lastF=fpMonthly[m].closing; });
+
+  return {cashOpening, cashMonthly, fpOpening, fpMonthly};
+}
+
+// ---------- CREDITREVERSAL tab: closing balance reference ----------
+function parseCreditReversal(wb){
+  const ws = wb.Sheets["CREDITREVERSAL"]; if(!ws) return null;
+  const rows = sheetRows(ws);
+  let lastClose=null;
+  for(let i=0;i<rows.length;i++){
+    const row=rows[i]; if(!row) continue;
+    if(row[17]!==null||row[18]!==null||row[19]!==null){ lastClose={igst:num(row[17]),cgst:num(row[18]),sgst:num(row[19])}; }
+  }
+  return lastClose;
+}
+
+// ---------- Books-side: dedicated known formats, generic fallback ----------
+function parseSRMonthlySummary(wb){
+  const ws = wb.Sheets["Monthly Summary"]; if(!ws) return null;
+  const rows = sheetRows(ws);
+  let hdr=-1;
+  for(let i=0;i<Math.min(rows.length,20);i++){
+    const row=rows[i]; if(!row) continue;
+    if(String(row[0]||"").toLowerCase()==="month") { hdr=i; break; }
+  }
+  if(hdr<0) return null;
+  const data={};
+  for(let i=hdr+1;i<rows.length;i++){
+    const row=rows[i]; if(!row) continue;
+    const m=monthFromLabel(row[0]); if(!m) continue;
+    data[m]={tv:num(row[1]),igst:num(row[2]),cgst:num(row[3]),sgst:num(row[4])};
+  }
+  return Object.keys(data).length? data : null;
+}
+function parseITCMonthlySummary(wb){
+  const ws = wb.Sheets["Monthly Summary of ITC"]; if(!ws) return null;
+  const rows = sheetRows(ws);
+  let hdr=-1;
+  for(let i=0;i<Math.min(rows.length,20);i++){
+    const row=rows[i]; if(!row) continue;
+    if(String(row[0]||"").toLowerCase()==="month") { hdr=i; break; }
+  }
+  if(hdr<0) return null;
+  const data={};
+  for(let i=hdr+1;i<rows.length;i++){
+    const row=rows[i]; if(!row) continue;
+    const m=monthFromLabel(row[0]); if(!m) continue;
+    data[m]={igst:num(row[3]),cgst:num(row[4]),sgst:num(row[5])};
+  }
+  return Object.keys(data).length? data : null;
+}
+function parseGenericMonthly(wb, kind){
+  let best=null;
+  for(const sn of wb.SheetNames){
+    const rows = sheetRows(wb.Sheets[sn]);
+    for(let i=0;i<Math.min(rows.length,60);i++){
+      const row=rows[i]; if(!row) continue;
+      let monthCol=-1,tvCol=-1,igstCol=-1,cgstCol=-1,sgstCol=-1;
+      row.forEach((c,j)=>{
+        if(typeof c!=="string") return;
+        const s=c.trim().toLowerCase();
+        if(monthCol<0 && (s==="month"||s==="period")) monthCol=j;
+        if(tvCol<0 && s.indexOf("taxable")>=0) tvCol=j;
+        if(igstCol<0 && s==="igst") igstCol=j;
+        if(cgstCol<0 && s==="cgst") cgstCol=j;
+        if(sgstCol<0 && s==="sgst") sgstCol=j;
+      });
+      if(monthCol>=0 && igstCol>=0 && cgstCol>=0 && sgstCol>=0 && (kind==="input" || tvCol>=0)){
+        const data={};
+        for(let k=i+1;k<rows.length;k++){
+          const r=rows[k]; if(!r) continue;
+          const m=monthFromLabel(r[monthCol]); if(!m) continue;
+          data[m]={tv:tvCol>=0?num(r[tvCol]):0, igst:num(r[igstCol]), cgst:num(r[cgstCol]), sgst:num(r[sgstCol])};
+        }
+        const count=Object.keys(data).length;
+        if(count && (!best||count>best.count)) best={data,count};
+        if(count>=12) return best.data;
+      }
+    }
+  }
+  return best? best.data : null;
+}
+
+function setStat(id, ok, msg){ const el=document.getElementById(id); el.textContent=msg; el.className="status "+(ok?"ok":"err"); }
+
+document.getElementById("fileYearly").addEventListener("change", async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const wb = await readWorkbook(f);
+    const outward = parseOutward(wb);
+    const inward = parseInward(wb);
+    const payment = parsePayment(wb);
+    const interest = parseInterest(wb);
+    if(!outward || !inward){ setStat("statYearly", false, "Could not find Outward/Inward tabs"); return; }
+    state.yearly = {outward, inward, payment, interest};
+    setStat("statYearly", true, `Loaded — Outward, Inward (incl. ITC Reversed), Payment, Interest tabs parsed`);
+  }catch(err){ setStat("statYearly", false, "Error: "+err.message); }
+});
+document.getElementById("fileLedger").addEventListener("change", async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const wb = await readWorkbook(f);
+    const credit = parseCreditLedger(wb);
+    const cash = parseCash(wb);
+    const cr = parseCreditReversal(wb);
+    if(!credit || !cash){ setStat("statLedger", false, "Could not find ITC/CASH tabs"); return; }
+    state.ledger = {credit, cash, creditReversalClosing: cr};
+    setStat("statLedger", true, `Loaded — Credit Ledger, Cash Ledger, Fees/Interest/Penalty/Others parsed`);
+  }catch(err){ setStat("statLedger", false, "Error: "+err.message); }
+});
+document.getElementById("fileSR").addEventListener("change", async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const wb = await readWorkbook(f);
+    let d = parseSRMonthlySummary(wb);
+    if(!d) d = parseGenericMonthly(wb,"output");
+    if(!d){ setStat("statSR", false, "Layout not recognised — grid stays editable"); return; }
+    state.srData = d;
+    setStat("statSR", true, `Loaded — ${Object.keys(d).length} months mapped`);
+  }catch(err){ setStat("statSR", false, "Error: "+err.message); }
+});
+document.getElementById("filePR").addEventListener("change", async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const wb = await readWorkbook(f);
+    let d = parseITCMonthlySummary(wb);
+    if(!d) d = parseGenericMonthly(wb,"input");
+    if(!d){ setStat("statPR", false, "Layout not recognised — grid stays editable"); return; }
+    state.prData = d;
+    setStat("statPR", true, `Loaded — ${Object.keys(d).length} months mapped`);
+  }catch(err){ setStat("statPR", false, "Error: "+err.message); }
+});
+
+function cellInput(id,val){ return `<input class="cell" type="number" step="0.01" id="${id}" value="${(val||0).toFixed(2)}">`; }
+
+function buildGrid(){
+  if(!state.yearly || !state.ledger){ alert("Please upload both required files first."); return; }
+  const {outward, inward} = state.yearly;
+  const sr = state.srData||{}, pr = state.prData||{};
+  const el = document.getElementById("tables");
+  el.innerHTML = "";
+
+  // -------- Output & RCM combined grid --------
+  let h = `<div class="card"><h2>Output &amp; RCM — Return vs Books (editable)</h2>
+  <div class="tablewrap"><table><thead>
+  <tr><th class="lbl" rowspan="2"></th>
+  <th colspan="4" class="hd-return">Output — As per Return</th><th colspan="4" class="hd-books">Output — As per Books</th>
+  <th colspan="4" class="hd-return">RCM — As per Return</th><th colspan="4" class="hd-books">RCM — As per Books</th></tr>
+  <tr><th class="hd-return">TV</th><th class="hd-return">IGST</th><th class="hd-return">CGST</th><th class="hd-return">SGST</th>
+  <th class="hd-books">TV</th><th class="hd-books">IGST</th><th class="hd-books">CGST</th><th class="hd-books">SGST</th>
+  <th class="hd-return">TV</th><th class="hd-return">IGST</th><th class="hd-return">CGST</th><th class="hd-return">SGST</th>
+  <th class="hd-books">TV</th><th class="hd-books">IGST</th><th class="hd-books">CGST</th><th class="hd-books">SGST</th></tr>
+  </thead><tbody>`;
+  MONTHS.forEach(m=>{
+    const o = outward.out[m], r = outward.rcm[m];
+    const od = sr[m]||{tv:0,igst:0,cgst:0,sgst:0};
+    h += `<tr><td class="lbl">${m}</td>
+      <td>${cellInput(`o_${m}_tv`,o.tv)}</td><td>${cellInput(`o_${m}_i`,o.igst)}</td><td>${cellInput(`o_${m}_c`,o.cgst)}</td><td>${cellInput(`o_${m}_s`,o.sgst)}</td>
+      <td>${cellInput(`od_${m}_tv`,od.tv)}</td><td>${cellInput(`od_${m}_i`,od.igst)}</td><td>${cellInput(`od_${m}_c`,od.cgst)}</td><td>${cellInput(`od_${m}_s`,od.sgst)}</td>
+      <td>${cellInput(`r_${m}_tv`,r.tv)}</td><td>${cellInput(`r_${m}_i`,r.igst)}</td><td>${cellInput(`r_${m}_c`,r.cgst)}</td><td>${cellInput(`r_${m}_s`,r.sgst)}</td>
+      <td>${cellInput(`rd_${m}_tv`,r.tv)}</td><td>${cellInput(`rd_${m}_i`,r.igst)}</td><td>${cellInput(`rd_${m}_c`,r.cgst)}</td><td>${cellInput(`rd_${m}_s`,r.sgst)}</td>
+      </tr>`;
+  });
+  h += `</tbody></table></div>
+  <div class="hint">RCM "As per Books" defaults to mirror the Return column — no dedicated RCM books reconciliation is built yet, so edit these cells directly once you have the real figures.</div></div>`;
+
+  // -------- Input (ITC) grid: derivation + Return vs Books --------
+  h += `<div class="card"><h2>Input (ITC) — Net (Excl. RCM), Return vs Books (editable)</h2>
+  <div class="tablewrap"><table><thead><tr><th class="lbl"></th>
+  <th colspan="3" class="hd-return">Gross All Other ITC (4A5)</th><th colspan="3" class="hd-diff">Less: Reversed (Rule 38/42/43)</th>
+  <th colspan="3" class="hd-diff">Less: Reversed (Others/4B2)</th><th colspan="3" class="hd-return">= Net (Return)</th>
+  <th colspan="3" class="hd-books">As per Books</th></tr>
+  <tr><th></th>${"<th class='hd-return'>IGST</th><th class='hd-return'>CGST</th><th class='hd-return'>SGST</th>".repeat(1)}
+  ${"<th class='hd-diff'>IGST</th><th class='hd-diff'>CGST</th><th class='hd-diff'>SGST</th>".repeat(2)}
+  ${"<th class='hd-return'>IGST</th><th class='hd-return'>CGST</th><th class='hd-return'>SGST</th>".repeat(1)}
+  ${"<th class='hd-books'>IGST</th><th class='hd-books'>CGST</th><th class='hd-books'>SGST</th>".repeat(1)}
+  </tr></thead><tbody>`;
+  MONTHS.forEach(m=>{
+    const g = inward.gross[m]||{igst:0,cgst:0,sgst:0};
+    const rv = inward.reversed[m]||{rule:{igst:0,cgst:0,sgst:0},others:{igst:0,cgst:0,sgst:0}};
+    const bb = pr[m]||{igst:0,cgst:0,sgst:0};
+    h += `<tr><td class="lbl">${m}</td>
+      <td>${cellInput(`g_${m}_i`,g.igst)}</td><td>${cellInput(`g_${m}_c`,g.cgst)}</td><td>${cellInput(`g_${m}_s`,g.sgst)}</td>
+      <td>${cellInput(`rr_${m}_i`,rv.rule.igst)}</td><td>${cellInput(`rr_${m}_c`,rv.rule.cgst)}</td><td>${cellInput(`rr_${m}_s`,rv.rule.sgst)}</td>
+      <td>${cellInput(`ro_${m}_i`,rv.others.igst)}</td><td>${cellInput(`ro_${m}_c`,rv.others.cgst)}</td><td>${cellInput(`ro_${m}_s`,rv.others.sgst)}</td>
+      <td class="d-return" id="net_${m}_i">${(g.igst-rv.rule.igst-rv.others.igst).toFixed(2)}</td>
+      <td class="d-return" id="net_${m}_c">${(g.cgst-rv.rule.cgst-rv.others.cgst).toFixed(2)}</td>
+      <td class="d-return" id="net_${m}_s">${(g.sgst-rv.rule.sgst-rv.others.sgst).toFixed(2)}</td>
+      <td>${cellInput(`ib_${m}_i`,bb.igst)}</td><td>${cellInput(`ib_${m}_c`,bb.cgst)}</td><td>${cellInput(`ib_${m}_s`,bb.sgst)}</td>
+      </tr>`;
+  });
+  h += `</tbody></table></div></div>`;
+
+  el.innerHTML = h;
+  // live-update Net columns when Gross/Reversal inputs change
+  el.querySelectorAll("input.cell").forEach(inp=>{
+    inp.addEventListener("input", ()=>{
+      MONTHS.forEach(m=>{
+        const g_i=document.getElementById(`g_${m}_i`), g_c=document.getElementById(`g_${m}_c`), g_s=document.getElementById(`g_${m}_s`);
+        if(!g_i) return;
+        const rr_i=document.getElementById(`rr_${m}_i`).value, rr_c=document.getElementById(`rr_${m}_c`).value, rr_s=document.getElementById(`rr_${m}_s`).value;
+        const ro_i=document.getElementById(`ro_${m}_i`).value, ro_c=document.getElementById(`ro_${m}_c`).value, ro_s=document.getElementById(`ro_${m}_s`).value;
+        document.getElementById(`net_${m}_i`).textContent = (num(g_i.value!==undefined?g_i.value:g_i)-num(rr_i)-num(ro_i)).toFixed(2);
+      });
+    });
+  });
+
+  document.getElementById("manualCard").style.display="block";
+  document.getElementById("genCard").style.display="block";
+}
+document.getElementById("btnBuild").addEventListener("click", buildGrid);
+
+function readVal(id){ const el=document.getElementById(id); return el? num(el.value):0; }
+
+function computeAll(){
+  const outTotals={tv:0,igst:0,cgst:0,sgst:0}, outDataTotals={tv:0,igst:0,cgst:0,sgst:0};
+  const rcmTotals={tv:0,igst:0,cgst:0,sgst:0}, rcmDataTotals={tv:0,igst:0,cgst:0,sgst:0};
+  const netReturnTotals={igst:0,cgst:0,sgst:0}, netBooksTotals={igst:0,cgst:0,sgst:0};
+  MONTHS.forEach(m=>{
+    ["tv","i","c","s"].forEach((suf,idx)=>{
+      const key=["tv","igst","cgst","sgst"][idx];
+      outTotals[key]+=readVal(`o_${m}_${suf}`); outDataTotals[key]+=readVal(`od_${m}_${suf}`);
+      rcmTotals[key]+=readVal(`r_${m}_${suf}`); rcmDataTotals[key]+=readVal(`rd_${m}_${suf}`);
+    });
+    ["i","c","s"].forEach((suf,idx)=>{
+      const key=["igst","cgst","sgst"][idx];
+      const g=readVal(`g_${m}_${suf}`), rr=readVal(`rr_${m}_${suf}`), ro=readVal(`ro_${m}_${suf}`);
+      netReturnTotals[key]+= g-rr-ro;
+      netBooksTotals[key]+=readVal(`ib_${m}_${suf}`);
+    });
+  });
+
+  const manual = {
+    opening: readVal("mOpening"), payment: readVal("mPayment"), reversal: readVal("mReversal"),
+    closing: readVal("mClosing"), payAfterMar: readVal("mPayAfterMar"),
+    adjExp: {igst:readVal("mAdjExpI"), cgst:readVal("mAdjExpC"), sgst:readVal("mAdjExpS")},
+    adjOth: {igst:readVal("mAdjOthI"), cgst:readVal("mAdjOthC"), sgst:readVal("mAdjOthS")}
+  };
+  const totalAdj = {igst:manual.adjExp.igst+manual.adjOth.igst, cgst:manual.adjExp.cgst+manual.adjOth.cgst, sgst:manual.adjExp.sgst+manual.adjOth.sgst};
+  const netBooksAdj = {igst:netBooksTotals.igst-totalAdj.igst, cgst:netBooksTotals.cgst-totalAdj.cgst, sgst:netBooksTotals.sgst-totalAdj.sgst};
+
+  const outputTotal = {igst:outDataTotals.igst+rcmDataTotals.igst, cgst:outDataTotals.cgst+rcmDataTotals.cgst, sgst:outDataTotals.sgst+rcmDataTotals.sgst};
+  const inputTotal = {igst:netBooksAdj.igst+rcmDataTotals.igst, cgst:netBooksAdj.cgst+rcmDataTotals.cgst, sgst:netBooksAdj.sgst+rcmDataTotals.sgst};
+  const gstPayable = {igst:outputTotal.igst-inputTotal.igst, cgst:outputTotal.cgst-inputTotal.cgst, sgst:outputTotal.sgst-inputTotal.sgst};
+  const payableTotal = gstPayable.igst+gstPayable.cgst+gstPayable.sgst;
+
+  const closingComputed = manual.opening + payableTotal - manual.payment + manual.reversal;
+  const closingComputed31Mar = closingComputed + manual.payAfterMar;
+  const diffVsClosing = closingComputed - manual.closing;
+  const diff31Mar = closingComputed31Mar - manual.closing;
+
+  return {outTotals,outDataTotals,rcmTotals,rcmDataTotals,netReturnTotals,netBooksTotals,netBooksAdj,totalAdj,
+    manual, outputTotal, inputTotal, gstPayable, payableTotal, closingComputed, closingComputed31Mar, diffVsClosing, diff31Mar};
+}
+
+function fmt(v){ return (v||0).toLocaleString("en-IN",{maximumFractionDigits:2,minimumFractionDigits:2}); }
+
+function renderSummary(){
+  const c = computeAll();
+  const d = document.getElementById("output");
+  d.innerHTML = "";
+
+  const dash = document.createElement("div"); dash.className="dashboard";
+  const kpis = [["a","GST Payable",fmt(c.payableTotal)],["b","Payment Made",fmt(c.manual.payment)],
+    ["c","Closing (computed, full year)",fmt(c.closingComputed)],["d","Diff vs Books/Portal",fmt(c.diffVsClosing)]];
+  kpis.forEach(([cls,l,v])=>{ dash.innerHTML+=`<div class="kpi ${cls}"><div class="v">₹ ${v}</div><div class="l">${l}</div></div>`; });
+  d.appendChild(dash);
+
+  const card = document.createElement("div"); card.className="card";
+  card.innerHTML = `
+  <div class="section-title">Summary Reconciliation</div>
+  <table><thead><tr><th class="lbl hd-neutral"></th><th class="hd-neutral">IGST</th><th class="hd-neutral">CGST</th><th class="hd-neutral">SGST</th></tr></thead><tbody>
+  <tr><td class="lbl">Output — Normal (Books)</td><td>${fmt(c.outDataTotals.igst)}</td><td>${fmt(c.outDataTotals.cgst)}</td><td>${fmt(c.outDataTotals.sgst)}</td></tr>
+  <tr><td class="lbl">Output — RCM (Books)</td><td>${fmt(c.rcmDataTotals.igst)}</td><td>${fmt(c.rcmDataTotals.cgst)}</td><td>${fmt(c.rcmDataTotals.sgst)}</td></tr>
+  <tr class="total"><td class="lbl">Output — Total</td><td>${fmt(c.outputTotal.igst)}</td><td>${fmt(c.outputTotal.cgst)}</td><td>${fmt(c.outputTotal.sgst)}</td></tr>
+  <tr><td class="lbl">Input — Net ITC (Books)</td><td>${fmt(c.netBooksTotals.igst)}</td><td>${fmt(c.netBooksTotals.cgst)}</td><td>${fmt(c.netBooksTotals.sgst)}</td></tr>
+  <tr><td class="lbl">Less: ITC Adjustments (expense/other)</td><td>${fmt(c.totalAdj.igst)}</td><td>${fmt(c.totalAdj.cgst)}</td><td>${fmt(c.totalAdj.sgst)}</td></tr>
+  <tr><td class="lbl">Add: RCM ITC</td><td>${fmt(c.rcmDataTotals.igst)}</td><td>${fmt(c.rcmDataTotals.cgst)}</td><td>${fmt(c.rcmDataTotals.sgst)}</td></tr>
+  <tr class="total"><td class="lbl">Input — Total (Incl. RCM, Adjusted)</td><td>${fmt(c.inputTotal.igst)}</td><td>${fmt(c.inputTotal.cgst)}</td><td>${fmt(c.inputTotal.sgst)}</td></tr>
+  <tr class="total"><td class="lbl">GST Payable</td><td>${fmt(c.gstPayable.igst)}</td><td>${fmt(c.gstPayable.cgst)}</td><td>${fmt(c.gstPayable.sgst)}</td></tr>
+  <tr><td class="lbl">Opening Balance</td><td colspan="3">${fmt(c.manual.opening)}</td></tr>
+  <tr><td class="lbl">Payment Made</td><td colspan="3">${fmt(c.manual.payment)}</td></tr>
+  <tr><td class="lbl">Adjustment / Reversal</td><td colspan="3">${fmt(c.manual.reversal)}</td></tr>
+  <tr class="total"><td class="lbl">Closing Balance — Computed (full year)</td><td colspan="3">${fmt(c.closingComputed)}</td></tr>
+  <tr><td class="lbl">Add back: Payment made after 31-March (already in Payment Made above)</td><td colspan="3">${fmt(c.manual.payAfterMar)}</td></tr>
+  <tr class="total"><td class="lbl">Closing Balance — Computed (as on 31-March)</td><td colspan="3">${fmt(c.closingComputed31Mar)}</td></tr>
+  <tr><td class="lbl">Closing Balance as per Books/Portal</td><td colspan="3">${fmt(c.manual.closing)}</td></tr>
+  <tr><td class="lbl">Diff — Computed (full year) vs Books/Portal</td><td colspan="3" class="diffcell">${fmt(c.diffVsClosing)}</td></tr>
+  <tr><td class="lbl">Diff — Computed (31-March) vs Books/Portal</td><td colspan="3" class="diffcell">${fmt(c.diff31Mar)}</td></tr>
+  </tbody></table>
+  <div class="legend">
+    <span><span class="swatch" style="background:var(--blue-d)"></span>As per Return</span>
+    <span><span class="swatch" style="background:var(--olive-d)"></span>As per Books</span>
+    <span><span class="swatch" style="background:var(--terra-d)"></span>Reversal / Diff</span>
+    <span><span class="swatch" style="background:var(--gray-d)"></span>Cash / Neutral</span>
+  </div>
+  <button class="primary" id="btnDownload" style="margin-top:14px;">Download Excel Workbook</button>`;
+  d.appendChild(card);
+
+  // Credit / Cash / Fees ledger tables
+  if(state.ledger){
+    d.appendChild(renderLedgerCard("Electronic Credit Ledger — Monthly Summary", state.ledger.credit.opening, state.ledger.credit.monthly, "accrued","utilised","ITC Accrued (Cr)","ITC Utilised (Dr)"));
+    d.appendChild(renderLedgerCard("Electronic Cash Ledger — Monthly Summary", state.ledger.cash.cashOpening, state.ledger.cash.cashMonthly, "cr","dr","Cash Deposited (Cr)","Cash Utilised (Dr)"));
+    d.appendChild(renderLedgerCard("Fees, Interest, Penalty & Others — Monthly Summary", state.ledger.cash.fpOpening, state.ledger.cash.fpMonthly, "cr","dr","Deposited (Cr)","Utilised (Dr)"));
+  }
+  if(state.yearly && state.yearly.payment) d.appendChild(renderPaymentSummary());
+
+  document.getElementById("btnDownload").addEventListener("click", ()=>downloadExcel(c));
+}
+
+function renderLedgerCard(title, opening, monthly, inKey, outKey, inLabel, outLabel){
+  const card = document.createElement("div"); card.className="card";
+  let h = `<div class="section-title">${title}</div><table><thead>
+  <tr><th class="lbl hd-neutral"></th><th colspan="3" class="hd-return">${inLabel}</th><th colspan="3" class="hd-diff">${outLabel}</th><th colspan="3" class="hd-books">Closing Balance</th></tr>
+  <tr><th class="hd-neutral"></th><th class="hd-return">IGST</th><th class="hd-return">CGST</th><th class="hd-return">SGST</th>
+  <th class="hd-diff">IGST</th><th class="hd-diff">CGST</th><th class="hd-diff">SGST</th>
+  <th class="hd-books">IGST</th><th class="hd-books">CGST</th><th class="hd-books">SGST</th></tr></thead><tbody>`;
+  h += `<tr><td class="lbl">Opening (1-Apr-2025)</td><td></td><td></td><td></td><td></td><td></td><td></td><td class="d-books">${fmt(opening.igst)}</td><td class="d-books">${fmt(opening.cgst)}</td><td class="d-books">${fmt(opening.sgst)}</td></tr>`;
+  let running = {...opening};
+  MONTHS.forEach(m=>{
+    const mm = monthly[m];
+    const inV = mm[inKey], outV = mm[outKey];
+    running = {igst:running.igst+inV.igst-outV.igst, cgst:running.cgst+inV.cgst-outV.cgst, sgst:running.sgst+inV.sgst-outV.sgst};
+    h += `<tr><td class="lbl">${m}</td><td class="d-return">${fmt(inV.igst)}</td><td class="d-return">${fmt(inV.cgst)}</td><td class="d-return">${fmt(inV.sgst)}</td>
+      <td class="d-diff">${fmt(outV.igst)}</td><td class="d-diff">${fmt(outV.cgst)}</td><td class="d-diff">${fmt(outV.sgst)}</td>
+      <td class="d-books">${fmt(running.igst)}</td><td class="d-books">${fmt(running.cgst)}</td><td class="d-books">${fmt(running.sgst)}</td></tr>`;
+  });
+  h += `</tbody></table>`;
+  card.innerHTML = h;
+  return card;
+}
+
+function renderPaymentSummary(){
+  const card = document.createElement("div"); card.className="card";
+  const monthly = state.yearly.payment;
+  let h = `<div class="section-title">Payment Summary — GST Payable, Paid through ITC, Paid through Cash</div>
+  <table><thead><tr><th class="lbl hd-neutral"></th>
+  <th colspan="3" class="hd-return">GST Payable</th><th colspan="3" class="hd-books">Paid through ITC</th>
+  <th colspan="3" class="hd-cash">Paid through Cash</th><th colspan="3" class="hd-diff">RCM Payable/Paid</th></tr>
+  <tr><th class="hd-neutral">Month</th>
+  ${"<th class='hd-return'>IGST</th><th class='hd-return'>CGST</th><th class='hd-return'>SGST</th>"}
+  ${"<th class='hd-books'>IGST</th><th class='hd-books'>CGST</th><th class='hd-books'>SGST</th>"}
+  ${"<th class='hd-cash'>IGST</th><th class='hd-cash'>CGST</th><th class='hd-cash'>SGST</th>"}
+  ${"<th class='hd-diff'>IGST</th><th class='hd-diff'>CGST</th><th class='hd-diff'>SGST</th>"}
+  </tr></thead><tbody>`;
+  MONTHS.forEach(m=>{
+    const d = monthly[m];
+    h += `<tr><td class="lbl">${m}</td>
+      <td class="d-return">${fmt(d.payable.igst)}</td><td class="d-return">${fmt(d.payable.cgst)}</td><td class="d-return">${fmt(d.payable.sgst)}</td>
+      <td class="d-books">${fmt(d.paidITC.igst)}</td><td class="d-books">${fmt(d.paidITC.cgst)}</td><td class="d-books">${fmt(d.paidITC.sgst)}</td>
+      <td class="d-cash">${fmt(d.cashNormal.igst)}</td><td class="d-cash">${fmt(d.cashNormal.cgst)}</td><td class="d-cash">${fmt(d.cashNormal.sgst)}</td>
+      <td class="d-diff">${fmt(d.rcmCash.igst)}</td><td class="d-diff">${fmt(d.rcmCash.cgst)}</td><td class="d-diff">${fmt(d.rcmCash.sgst)}</td></tr>`;
+  });
+  h += `</tbody></table>`;
+  card.innerHTML = h;
+  return card;
+}
+
+async function downloadExcel(c){
+  const wb = new ExcelJS.Workbook();
+  const wsS = wb.addWorksheet("Summary"); // added first so it's the leftmost tab
+  const CH="FF22434A", BL="FF2F7FB0", OL="FF2A7F72", TR="FFB9673A", GR="FF6E8A94", TOT="FFE4ECEE";
+  function hdr(cell,text,argb){ cell.value=text; cell.font={bold:true,color:{argb:"FFFFFFFF"}}; cell.fill={type:"pattern",pattern:"solid",fgColor:{argb}}; cell.alignment={horizontal:"center",wrapText:true}; }
+  function tot(cell){ cell.font={bold:true}; cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:TOT}}; }
+  const numFmt = '#,##0.00;(#,##0.00);"-"';
+
+  function titleBlock(ws,title){
+    ws.getCell("A1").value = title; ws.getCell("A1").font={bold:true,size:13};
+    ws.getCell("A2").value = "Pradip B. Gandhi & Co. LLP, Chartered Accountants (Prepared by CA Amit N. Lakhtariya) — INCY HEALTHCARE PVT LTD, GSTIN 24AAACI8857N1Z0";
+    ws.getCell("A2").font = {italic:true,size:9,color:{argb:"FF71807F"}};
+  }
+
+  // ---------------- Output ----------------
+  const wsO = wb.addWorksheet("Output");
+  titleBlock(wsO,"Output Reconciliation — As per Return (Table 3.1(a) only) vs As per Books");
+  let gr=5;
+  wsO.mergeCells(gr,2,gr,5); hdr(wsO.getCell(gr,2),"As per Return",BL);
+  wsO.mergeCells(gr,6,gr,9); hdr(wsO.getCell(gr,6),"As per Books",OL);
+  wsO.mergeCells(gr,10,gr,13); hdr(wsO.getCell(gr,10),"Difference",TR);
+  let hr=gr+1;
+  ["Month","TV","IGST","CGST","SGST","TV","IGST","CGST","SGST","TV","IGST","CGST","SGST"].forEach((h,i)=>hdr(wsO.getCell(hr,i+1),h, i===0?CH:(i<=4?BL:(i<=8?OL:TR))));
+  let r=hr+1, first=r;
+  MONTHS.forEach(m=>{
+    wsO.getCell(r,1).value=m;
+    wsO.getCell(r,2).value=readVal(`o_${m}_tv`); wsO.getCell(r,3).value=readVal(`o_${m}_i`); wsO.getCell(r,4).value=readVal(`o_${m}_c`); wsO.getCell(r,5).value=readVal(`o_${m}_s`);
+    wsO.getCell(r,6).value=readVal(`od_${m}_tv`); wsO.getCell(r,7).value=readVal(`od_${m}_i`); wsO.getCell(r,8).value=readVal(`od_${m}_c`); wsO.getCell(r,9).value=readVal(`od_${m}_s`);
+    for(let cc=1;cc<=4;cc++){ wsO.getCell(r,9+cc).value={formula:`${String.fromCharCode(65+cc)}${r}-${String.fromCharCode(69+cc)}${r}`}; }
+    for(let cc=2;cc<=13;cc++) wsO.getCell(r,cc).numFmt=numFmt;
+    r++;
+  });
+  let last=r-1;
+  wsO.getCell(r,1).value="Total";
+  for(let cc=2;cc<=13;cc++){ const col=String.fromCharCode(64+cc); wsO.getCell(r,cc).value={formula:`SUM(${col}${first}:${col}${last})`}; tot(wsO.getCell(r,cc)); wsO.getCell(r,cc).numFmt=numFmt; }
+  tot(wsO.getCell(r,1));
+  const outTotalRow=r;
+  wsO.columns.forEach(col=>col.width=13); wsO.getColumn(1).width=12;
+
+  // ---------------- RCM ----------------
+  const wsR = wb.addWorksheet("RCM");
+  titleBlock(wsR,"RCM (Reverse Charge) — As per Return vs As per Books");
+  gr=5;
+  wsR.mergeCells(gr,2,gr,5); hdr(wsR.getCell(gr,2),"As per Return",BL);
+  wsR.mergeCells(gr,6,gr,9); hdr(wsR.getCell(gr,6),"As per Books",OL);
+  wsR.mergeCells(gr,10,gr,13); hdr(wsR.getCell(gr,10),"Difference",TR);
+  hr=gr+1;
+  ["Month","TV","IGST","CGST","SGST","TV","IGST","CGST","SGST","TV","IGST","CGST","SGST"].forEach((h,i)=>hdr(wsR.getCell(hr,i+1),h, i===0?CH:(i<=4?BL:(i<=8?OL:TR))));
+  r=hr+1; first=r;
+  MONTHS.forEach(m=>{
+    wsR.getCell(r,1).value=m;
+    wsR.getCell(r,2).value=readVal(`r_${m}_tv`); wsR.getCell(r,3).value=readVal(`r_${m}_i`); wsR.getCell(r,4).value=readVal(`r_${m}_c`); wsR.getCell(r,5).value=readVal(`r_${m}_s`);
+    wsR.getCell(r,6).value=readVal(`rd_${m}_tv`); wsR.getCell(r,7).value=readVal(`rd_${m}_i`); wsR.getCell(r,8).value=readVal(`rd_${m}_c`); wsR.getCell(r,9).value=readVal(`rd_${m}_s`);
+    for(let cc=1;cc<=4;cc++){ wsR.getCell(r,9+cc).value={formula:`${String.fromCharCode(65+cc)}${r}-${String.fromCharCode(69+cc)}${r}`}; }
+    for(let cc=2;cc<=13;cc++) wsR.getCell(r,cc).numFmt=numFmt;
+    r++;
+  });
+  last=r-1;
+  wsR.getCell(r,1).value="Total";
+  for(let cc=2;cc<=13;cc++){ const col=String.fromCharCode(64+cc); wsR.getCell(r,cc).value={formula:`SUM(${col}${first}:${col}${last})`}; tot(wsR.getCell(r,cc)); wsR.getCell(r,cc).numFmt=numFmt; }
+  tot(wsR.getCell(r,1));
+  const rcmTotalRow=r;
+  wsR.columns.forEach(col=>col.width=13); wsR.getColumn(1).width=12;
+
+  // ---------------- Input (ITC) ----------------
+  const wsI = wb.addWorksheet("Input (ITC)");
+  titleBlock(wsI,"Input (ITC) Reconciliation — Net ITC (Excl. RCM), Return vs Books");
+  gr=5;
+  wsI.getCell(gr,1).value="Derivation of Return-side Net ITC (Excl. RCM)"; wsI.getCell(gr,1).font={bold:true};
+  gr++;
+  wsI.mergeCells(gr,2,gr,4); hdr(wsI.getCell(gr,2),"Gross All Other ITC",BL);
+  wsI.mergeCells(gr,5,gr,7); hdr(wsI.getCell(gr,5),"Less: Rule 38/42/43",TR);
+  wsI.mergeCells(gr,8,gr,10); hdr(wsI.getCell(gr,8),"Less: Others/4B2",TR);
+  wsI.mergeCells(gr,11,gr,13); hdr(wsI.getCell(gr,11),"Net (Return)",BL);
+  hr=gr+1;
+  ["Month","IGST","CGST","SGST","IGST","CGST","SGST","IGST","CGST","SGST","IGST","CGST","SGST"].forEach((h,i)=>hdr(wsI.getCell(hr,i+1),h, i===0?CH:(i<=3?BL:(i<=9?TR:BL))));
+  r=hr+1; const dfirst=r;
+  MONTHS.forEach(m=>{
+    wsI.getCell(r,1).value=m;
+    wsI.getCell(r,2).value=readVal(`g_${m}_i`); wsI.getCell(r,3).value=readVal(`g_${m}_c`); wsI.getCell(r,4).value=readVal(`g_${m}_s`);
+    wsI.getCell(r,5).value=readVal(`rr_${m}_i`); wsI.getCell(r,6).value=readVal(`rr_${m}_c`); wsI.getCell(r,7).value=readVal(`rr_${m}_s`);
+    wsI.getCell(r,8).value=readVal(`ro_${m}_i`); wsI.getCell(r,9).value=readVal(`ro_${m}_c`); wsI.getCell(r,10).value=readVal(`ro_${m}_s`);
+    wsI.getCell(r,11).value={formula:`B${r}-E${r}-H${r}`}; wsI.getCell(r,12).value={formula:`C${r}-F${r}-I${r}`}; wsI.getCell(r,13).value={formula:`D${r}-G${r}-J${r}`};
+    for(let cc=2;cc<=13;cc++) wsI.getCell(r,cc).numFmt=numFmt;
+    r++;
+  });
+  let dlast=r-1;
+  wsI.getCell(r,1).value="Total";
+  for(let cc=2;cc<=13;cc++){ const col=String.fromCharCode(64+cc); wsI.getCell(r,cc).value={formula:`SUM(${col}${dfirst}:${col}${dlast})`}; tot(wsI.getCell(r,cc)); wsI.getCell(r,cc).numFmt=numFmt; }
+  tot(wsI.getCell(r,1));
+  r+=2;
+  wsI.getCell(r,1).value="Reconciliation — Net ITC (Excl. RCM): Return vs Books"; wsI.getCell(r,1).font={bold:true};
+  r++;
+  const gr2=r;
+  wsI.mergeCells(gr2,2,gr2,4); hdr(wsI.getCell(gr2,2),"As per Return (Net)",BL);
+  wsI.mergeCells(gr2,5,gr2,7); hdr(wsI.getCell(gr2,5),"As per Books",OL);
+  wsI.mergeCells(gr2,8,gr2,10); hdr(wsI.getCell(gr2,8),"Difference",TR);
+  const hr2=gr2+1;
+  ["Month","IGST","CGST","SGST","IGST","CGST","SGST","IGST","CGST","SGST"].forEach((h,i)=>hdr(wsI.getCell(hr2,i+1),h, i===0?CH:(i<=3?BL:(i<=6?OL:TR))));
+  r=hr2+1; const infirst=r;
+  MONTHS.forEach((m,idx)=>{
+    const drow=dfirst+idx;
+    wsI.getCell(r,1).value=m;
+    wsI.getCell(r,2).value={formula:`K${drow}`}; wsI.getCell(r,3).value={formula:`L${drow}`}; wsI.getCell(r,4).value={formula:`M${drow}`};
+    wsI.getCell(r,5).value=readVal(`ib_${m}_i`); wsI.getCell(r,6).value=readVal(`ib_${m}_c`); wsI.getCell(r,7).value=readVal(`ib_${m}_s`);
+    wsI.getCell(r,8).value={formula:`B${r}-E${r}`}; wsI.getCell(r,9).value={formula:`C${r}-F${r}`}; wsI.getCell(r,10).value={formula:`D${r}-G${r}`};
+    for(let cc=2;cc<=10;cc++) wsI.getCell(r,cc).numFmt=numFmt;
+    r++;
+  });
+  let inlast=r-1;
+  wsI.getCell(r,1).value="Total";
+  for(let cc=2;cc<=10;cc++){ const col=String.fromCharCode(64+cc); wsI.getCell(r,cc).value={formula:`SUM(${col}${infirst}:${col}${inlast})`}; tot(wsI.getCell(r,cc)); wsI.getCell(r,cc).numFmt=numFmt; }
+  tot(wsI.getCell(r,1));
+  const inTotalRow=r;
+  r+=2;
+  wsI.getCell(r,1).value="ITC Adjustments (Books) — reversed & booked as expense / other"; wsI.getCell(r,1).font={bold:true};
+  r++;
+  ["Particulars","IGST","CGST","SGST"].forEach((h,i)=>hdr(wsI.getCell(r,i+1),h,CH));
+  r++;
+  const adjFirst=r;
+  wsI.getCell(r,1).value="ITC reversed & booked as expense"; wsI.getCell(r,2).value=readVal("mAdjExpI"); wsI.getCell(r,3).value=readVal("mAdjExpC"); wsI.getCell(r,4).value=readVal("mAdjExpS");
+  r++;
+  wsI.getCell(r,1).value="Other adjustments"; wsI.getCell(r,2).value=readVal("mAdjOthI"); wsI.getCell(r,3).value=readVal("mAdjOthC"); wsI.getCell(r,4).value=readVal("mAdjOthS");
+  const adjLast=r; r++;
+  wsI.getCell(r,1).value="Total ITC Adjustments";
+  for(let cc=2;cc<=4;cc++){ const col=String.fromCharCode(64+cc); wsI.getCell(r,cc).value={formula:`SUM(${col}${adjFirst}:${col}${adjLast})`}; tot(wsI.getCell(r,cc)); wsI.getCell(r,cc).numFmt=numFmt; }
+  tot(wsI.getCell(r,1));
+  const adjTotalRow=r; r++;
+  wsI.getCell(r,1).value="Net ITC (Books) — Adjusted";
+  wsI.getCell(r,2).value={formula:`E${inTotalRow}-B${adjTotalRow}`}; wsI.getCell(r,3).value={formula:`F${inTotalRow}-C${adjTotalRow}`}; wsI.getCell(r,4).value={formula:`G${inTotalRow}-D${adjTotalRow}`};
+  for(let cc=1;cc<=4;cc++){ tot(wsI.getCell(r,cc)); wsI.getCell(r,cc).numFmt=numFmt; }
+  const adjustedNetRow=r;
+  wsI.columns.forEach(col=>col.width=13); wsI.getColumn(1).width=42;
+
+  // ---------------- Payment Summary ----------------
+  const wsP = wb.addWorksheet("Payment Summary");
+  titleBlock(wsP,"Payment Summary — GST Payable, Paid through ITC, Paid through Cash");
+  gr=5;
+  const payment = state.yearly.payment;
+  [["GST Payable",2,BL],["Paid through ITC",5,OL],["Paid through Cash",8,GR],["RCM Payable/Paid",11,TR]].forEach(([label,cs,col])=>{
+    wsP.mergeCells(gr,cs,gr,cs+2); hdr(wsP.getCell(gr,cs),label,col);
+  });
+  hr=gr+1;
+  const payHeaders=["Month","IGST","CGST","SGST","IGST","CGST","SGST","IGST","CGST","SGST","IGST","CGST","SGST"];
+  const payColours=[CH,BL,BL,BL,OL,OL,OL,GR,GR,GR,TR,TR,TR];
+  payHeaders.forEach((h,i)=>hdr(wsP.getCell(hr,i+1),h,payColours[i]));
+  r=hr+1; first=r;
+  MONTHS.forEach(m=>{
+    const d=payment[m];
+    wsP.getCell(r,1).value=m;
+    wsP.getCell(r,2).value=d.payable.igst; wsP.getCell(r,3).value=d.payable.cgst; wsP.getCell(r,4).value=d.payable.sgst;
+    wsP.getCell(r,5).value=d.paidITC.igst; wsP.getCell(r,6).value=d.paidITC.cgst; wsP.getCell(r,7).value=d.paidITC.sgst;
+    wsP.getCell(r,8).value=d.cashNormal.igst; wsP.getCell(r,9).value=d.cashNormal.cgst; wsP.getCell(r,10).value=d.cashNormal.sgst;
+    wsP.getCell(r,11).value=d.rcmCash.igst; wsP.getCell(r,12).value=d.rcmCash.cgst; wsP.getCell(r,13).value=d.rcmCash.sgst;
+    for(let cc=2;cc<=13;cc++) wsP.getCell(r,cc).numFmt=numFmt;
+    r++;
+  });
+  last=r-1;
+  wsP.getCell(r,1).value="Total";
+  for(let cc=2;cc<=13;cc++){ const col=String.fromCharCode(64+cc); wsP.getCell(r,cc).value={formula:`SUM(${col}${first}:${col}${last})`}; tot(wsP.getCell(r,cc)); wsP.getCell(r,cc).numFmt=numFmt; }
+  tot(wsP.getCell(r,1));
+  wsP.columns.forEach(col=>col.width=13); wsP.getColumn(1).width=12;
+
+  // ---------------- Ledger sheets (Credit / Cash / Fees) ----------------
+  function ledgerSheet(name, opening, monthly, inKey, outKey, inLabel, outLabel){
+    const ws = wb.addWorksheet(name);
+    titleBlock(ws, name + " — Monthly Summary");
+    let gr=5;
+    ws.mergeCells(gr,2,gr,4); hdr(ws.getCell(gr,2),inLabel,BL);
+    ws.mergeCells(gr,5,gr,7); hdr(ws.getCell(gr,5),outLabel,TR);
+    ws.mergeCells(gr,8,gr,10); hdr(ws.getCell(gr,8),"Closing Balance",OL);
+    const hr=gr+1;
+    ["Month","IGST","CGST","SGST","IGST","CGST","SGST","IGST","CGST","SGST"].forEach((h,i)=>hdr(ws.getCell(hr,i+1),h, i===0?CH:(i<=3?BL:(i<=6?TR:OL))));
+    let r=hr+1;
+    ws.getCell(r,1).value="Opening Balance (1-Apr-2025)";
+    ws.getCell(r,8).value=opening.igst; ws.getCell(r,9).value=opening.cgst; ws.getCell(r,10).value=opening.sgst;
+    for(let cc=8;cc<=10;cc++) ws.getCell(r,cc).numFmt=numFmt;
+    r++; const first=r;
+    MONTHS.forEach(m=>{
+      const mm=monthly[m], inV=mm[inKey], outV=mm[outKey];
+      ws.getCell(r,1).value=m;
+      ws.getCell(r,2).value=inV.igst; ws.getCell(r,3).value=inV.cgst; ws.getCell(r,4).value=inV.sgst;
+      ws.getCell(r,5).value=outV.igst; ws.getCell(r,6).value=outV.cgst; ws.getCell(r,7).value=outV.sgst;
+      ws.getCell(r,8).value={formula:`H${r-1}+B${r}-E${r}`}; ws.getCell(r,9).value={formula:`I${r-1}+C${r}-F${r}`}; ws.getCell(r,10).value={formula:`J${r-1}+D${r}-G${r}`};
+      for(let cc=2;cc<=10;cc++) ws.getCell(r,cc).numFmt=numFmt;
+      r++;
+    });
+    const last=r-1;
+    ws.getCell(r,1).value="Total Movement";
+    for(let cc=2;cc<=7;cc++){ const col=String.fromCharCode(64+cc); ws.getCell(r,cc).value={formula:`SUM(${col}${first}:${col}${last})`}; tot(ws.getCell(r,cc)); ws.getCell(r,cc).numFmt=numFmt; }
+    ws.getCell(r,8).value={formula:`H${last}`}; ws.getCell(r,9).value={formula:`I${last}`}; ws.getCell(r,10).value={formula:`J${last}`};
+    for(let cc=8;cc<=10;cc++){ tot(ws.getCell(r,cc)); ws.getCell(r,cc).numFmt=numFmt; }
+    tot(ws.getCell(r,1));
+    ws.columns.forEach(col=>col.width=13); ws.getColumn(1).width=24;
+    return {sheet:ws, totalRow:r};
+  }
+  const led = state.ledger;
+  ledgerSheet("Credit Ledger", led.credit.opening, led.credit.monthly, "accrued","utilised","ITC Accrued (Cr)","ITC Utilised (Dr)");
+  ledgerSheet("Cash Ledger", led.cash.cashOpening, led.cash.cashMonthly, "cr","dr","Cash Deposited (Cr)","Cash Utilised (Dr)");
+  ledgerSheet("Fees Int Penalty Others", led.cash.fpOpening, led.cash.fpMonthly, "cr","dr","Deposited (Cr)","Utilised (Dr)");
+
+  // ---------------- Summary (cross-sheet formulas) — worksheet was created first above; fill it now ----------------
+  wb.views = [{firstSheet:0, activeTab:0}];
+  titleBlock(wsS,"GST Reconciliation Summary — FY 2025-26");
+  wsS.getCell(4,1).value="Sign convention: positive = Payable, negative = Credit. All figures below are live formulas."; wsS.getCell(4,1).font={italic:true,size:9};
+  gr=6;
+  ["Particulars","IGST","CGST","SGST","Total"].forEach((h,i)=>hdr(wsS.getCell(gr,i+1),h,CH));
+  r=gr+1;
+  function srow(label, formulaOrVal, isFormula){ wsS.getCell(r,1).value=label; return r; }
+  wsS.getCell(r,1).value="Output — Total (Books)";
+  wsS.getCell(r,2).value={formula:`Output!G${outTotalRow}`}; wsS.getCell(r,3).value={formula:`Output!H${outTotalRow}`}; wsS.getCell(r,4).value={formula:`Output!I${outTotalRow}`};
+  wsS.getCell(r,5).value={formula:`SUM(B${r}:D${r})`};
+  const outRow=r; r++;
+  wsS.getCell(r,1).value="RCM — Total (Books)";
+  wsS.getCell(r,2).value={formula:`RCM!G${rcmTotalRow}`}; wsS.getCell(r,3).value={formula:`RCM!H${rcmTotalRow}`}; wsS.getCell(r,4).value={formula:`RCM!I${rcmTotalRow}`};
+  wsS.getCell(r,5).value={formula:`SUM(B${r}:D${r})`};
+  const rcmRow=r; r++;
+  wsS.getCell(r,1).value="Output — Grand Total";
+  wsS.getCell(r,2).value={formula:`B${outRow}+B${rcmRow}`}; wsS.getCell(r,3).value={formula:`C${outRow}+C${rcmRow}`}; wsS.getCell(r,4).value={formula:`D${outRow}+D${rcmRow}`};
+  wsS.getCell(r,5).value={formula:`SUM(B${r}:D${r})`};
+  for(let cc=1;cc<=5;cc++) tot(wsS.getCell(r,cc));
+  const outGrandRow=r; r+=2;
+  wsS.getCell(r,1).value="Input — Net ITC, Adjusted (Books)";
+  wsS.getCell(r,2).value={formula:`'Input (ITC)'!B${adjustedNetRow}`}; wsS.getCell(r,3).value={formula:`'Input (ITC)'!C${adjustedNetRow}`}; wsS.getCell(r,4).value={formula:`'Input (ITC)'!D${adjustedNetRow}`};
+  wsS.getCell(r,5).value={formula:`SUM(B${r}:D${r})`};
+  const inRow=r; r++;
+  wsS.getCell(r,1).value="Input — Grand Total (Incl. RCM)";
+  wsS.getCell(r,2).value={formula:`B${inRow}+B${rcmRow}`}; wsS.getCell(r,3).value={formula:`C${inRow}+C${rcmRow}`}; wsS.getCell(r,4).value={formula:`D${inRow}+D${rcmRow}`};
+  wsS.getCell(r,5).value={formula:`SUM(B${r}:D${r})`};
+  for(let cc=1;cc<=5;cc++) tot(wsS.getCell(r,cc));
+  const inGrandRow=r; r+=2;
+  wsS.getCell(r,1).value="GST Payable (Output − Input)";
+  wsS.getCell(r,2).value={formula:`B${outGrandRow}-B${inGrandRow}`}; wsS.getCell(r,3).value={formula:`C${outGrandRow}-C${inGrandRow}`}; wsS.getCell(r,4).value={formula:`D${outGrandRow}-D${inGrandRow}`};
+  wsS.getCell(r,5).value={formula:`SUM(B${r}:D${r})`};
+  for(let cc=1;cc<=5;cc++) tot(wsS.getCell(r,cc));
+  const payRow=r; r+=2;
+  wsS.getCell(r,1).value="Opening Balance"; wsS.getCell(r,5).value=c.manual.opening; const openRow=r; r++;
+  wsS.getCell(r,1).value="Payment Made"; wsS.getCell(r,5).value=c.manual.payment; const paymtRow=r; r++;
+  wsS.getCell(r,1).value="Adjustment / Reversal"; wsS.getCell(r,5).value=c.manual.reversal; const revRow=r; r++;
+  wsS.getCell(r,1).value="Closing Balance — Computed (full year)";
+  wsS.getCell(r,5).value={formula:`E${openRow}+E${payRow}-E${paymtRow}+E${revRow}`};
+  for(let cc=1;cc<=5;cc++) tot(wsS.getCell(r,cc));
+  const closeCompRow=r; r++;
+  wsS.getCell(r,1).value="Add back: Payment made after 31-March"; wsS.getCell(r,5).value=c.manual.payAfterMar; const afterMarRow=r; r++;
+  wsS.getCell(r,1).value="Closing Balance — Computed (31-March)";
+  wsS.getCell(r,5).value={formula:`E${closeCompRow}+E${afterMarRow}`};
+  for(let cc=1;cc<=5;cc++) tot(wsS.getCell(r,cc));
+  const close31Row=r; r++;
+  wsS.getCell(r,1).value="Closing Balance as per Books/Portal"; wsS.getCell(r,5).value=c.manual.closing; const closeActualRow=r; r++;
+  wsS.getCell(r,1).value="Diff — Computed (full year) vs Books/Portal";
+  wsS.getCell(r,5).value={formula:`E${closeCompRow}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5)); r++;
+  wsS.getCell(r,1).value="Diff — Computed (31-March) vs Books/Portal";
+  wsS.getCell(r,5).value={formula:`E${close31Row}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5));
+  for(let rr=gr;rr<=r;rr++) for(let cc=1;cc<=5;cc++) wsS.getCell(rr,cc).numFmt=numFmt===wsS.getCell(rr,cc).numFmt?numFmt:numFmt;
+  wsS.getColumn(1).width=42; ["B","C","D","E"].forEach(cl=>wsS.getColumn(cl).width=15);
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:"application/octet-stream"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "GST_Reconciliation_Summary.xlsx";
+  a.click();
+}
+
+document.getElementById("btnGenerate").addEventListener("click", renderSummary);
+</script>
+<footer>
+  <div class="firm">Pradip B. Gandhi &amp; Co. LLP, Chartered Accountants</div>
+  <div>FRN: 118674W/W101002 · Prepared by CA Amit N. Lakhtariya</div>
+  <div>819, Iconic Shyamal, Shyamal Cross Road, Satellite, Ahmedabad – 380015 · www.caahmedabad.com</div>
+</footer>
+</body>
+</html>
