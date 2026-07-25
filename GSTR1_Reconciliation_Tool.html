@@ -1126,7 +1126,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
     var ms = wb.addWorksheet('Monthly Summary');
     styleTitle(ms.getCell('A1'), 'Monthly Summary — Books (PR) vs GSTR-1');
-    styleSub(ms.getCell('A2'), 'Books grouped by voucher date; GSTR-1 by filing period (incl. B2CS aggregate rows). Red cells = difference beyond the Rs ' + msTolerance + ' tolerance.');
+    styleSub(ms.getCell('A2'), 'Books grouped by voucher date; GSTR-1 by filing period (incl. B2CS aggregate rows). Red cells = difference beyond the Rs ' + msTolerance + ' tolerance. Large swings in individual months are normal when an invoice\'s voucher date and its GSTR-1 filing period fall in different months (e.g. month-end filings) — they offset across months. Only the TOTAL row is the real reconciliation check; trace it to the Mismatch Action and Exceptions tabs.');
     var msGroupRow = 4, msHr = 5;
     ms.mergeCells(msGroupRow, 2, msGroupRow, 6);
     ms.mergeCells(msGroupRow, 7, msGroupRow, 11);
@@ -1173,6 +1173,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         tc.value = { formula: 'SUM(' + colLetter + msFirst + ':' + colLetter + msLast + ')' };
         tc.numFmt = NUMFMT; tc.font = { name: 'Arial', size: 10, bold: true }; tc.border = thinBorder();
       }
+      r += 2;
+      styleSub(ms.getCell(r, 1), 'The TOTAL row above is the only figure that represents a genuine, unresolved reconciliation gap — its Taxable Value / CGST / SGST differences are itemised on the Mismatch Action tab, and its Invoice Value gap is itemised on the Exceptions tab (cancelled vouchers, non-GST credit/debit notes, B2CS aggregates). Differences on individual month rows above largely offset each other and do not need separate investigation.');
     }
     ms.columns = [{ width: 18 }].concat([14, 12, 12, 12, 14, 14, 12, 12, 12, 14, 13, 11, 11, 11, 13].map(function (w) { return { width: w }; }));
     ms.views = [{ state: 'frozen', xSplit: 1, ySplit: msHr, showGridLines: false }];
