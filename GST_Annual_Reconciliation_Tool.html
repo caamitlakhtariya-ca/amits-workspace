@@ -600,6 +600,17 @@ document.getElementById("btnBuild").addEventListener("click", buildGrid);
 
 function readVal(id){ const el=document.getElementById(id); return el? num(el.value):0; }
 
+function ledgerClosingTotal(opening, monthly, inKey, outKey){
+  let igst=opening.igst, cgst=opening.cgst, sgst=opening.sgst;
+  MONTHS.forEach(m=>{
+    const mm=monthly[m];
+    igst += mm[inKey].igst - mm[outKey].igst;
+    cgst += mm[inKey].cgst - mm[outKey].cgst;
+    sgst += mm[inKey].sgst - mm[outKey].sgst;
+  });
+  return igst+cgst+sgst;
+}
+
 function computeAll(){
   const outTotals={tv:0,igst:0,cgst:0,sgst:0}, outDataTotals={tv:0,igst:0,cgst:0,sgst:0};
   const rcmTotals={tv:0,igst:0,cgst:0,sgst:0}, rcmDataTotals={tv:0,igst:0,cgst:0,sgst:0};
@@ -637,8 +648,22 @@ function computeAll(){
   const diffVsClosing = closingComputed - manual.closing;
   const diff31Mar = closingComputed31Mar - manual.closing;
 
+  // Portal reconciliation bridge: start from the actual Electronic Credit Ledger closing
+  // balance (Return-basis, as reported on the portal), adjust for the already-identified
+  // Return-vs-Books gaps on Output and Input so it's comparable to our own Books-basis
+  // working, then see what's left over to investigate.
+  const outputDiff = (outTotals.igst+outTotals.cgst+outTotals.sgst) - (outDataTotals.igst+outDataTotals.cgst+outDataTotals.sgst);
+  const inputDiff = (netReturnTotals.igst+netReturnTotals.cgst+netReturnTotals.sgst) - (netBooksTotals.igst+netBooksTotals.cgst+netBooksTotals.sgst);
+  let portalBalance=0, revisedPortalBalance=0, netDiffToSearch=0;
+  if(state.ledger){
+    portalBalance = ledgerClosingTotal(state.ledger.credit.opening, state.ledger.credit.monthly, "accrued","utilised");
+    revisedPortalBalance = portalBalance + outputDiff - inputDiff;
+    netDiffToSearch = revisedPortalBalance + closingComputed31Mar;
+  }
+
   return {outTotals,outDataTotals,rcmTotals,rcmDataTotals,netReturnTotals,netBooksTotals,netBooksAdj,totalAdj,
-    manual, outputTotal, inputTotal, gstPayable, payableTotal, closingComputed, closingComputed31Mar, diffVsClosing, diff31Mar};
+    manual, outputTotal, inputTotal, gstPayable, payableTotal, closingComputed, closingComputed31Mar, diffVsClosing, diff31Mar,
+    outputDiff, inputDiff, portalBalance, revisedPortalBalance, netDiffToSearch};
 }
 
 function fmt(v){ return (v||0).toLocaleString("en-IN",{maximumFractionDigits:2,minimumFractionDigits:2}); }
@@ -675,6 +700,15 @@ function renderSummary(){
   <tr><td class="lbl">Closing Balance as per Books/Portal</td><td colspan="3">${fmt(c.manual.closing)}</td></tr>
   <tr><td class="lbl">Diff — Computed (full year) vs Books/Portal</td><td colspan="3" class="diffcell">${fmt(c.diffVsClosing)}</td></tr>
   <tr><td class="lbl">Diff — Computed (31-March) vs Books/Portal</td><td colspan="3" class="diffcell">${fmt(c.diff31Mar)}</td></tr>
+  ${state.ledger ? `
+  <tr><td class="lbl" colspan="4" style="padding-top:10px;font-weight:700;">Portal Reconciliation Bridge</td></tr>
+  <tr><td class="lbl">Balance as per Portal (Electronic Credit Ledger)</td><td colspan="3">${fmt(c.portalBalance)}</td></tr>
+  <tr><td class="lbl">Add/(Less): Output Difference (Return − Books, already identified)</td><td colspan="3">${fmt(c.outputDiff)}</td></tr>
+  <tr><td class="lbl">Add/(Less): Input Difference (Return − Books, already identified)</td><td colspan="3">${fmt(-c.inputDiff)}</td></tr>
+  <tr class="total"><td class="lbl">Revised Portal Balance</td><td colspan="3">${fmt(c.revisedPortalBalance)}</td></tr>
+  <tr><td class="lbl">Balance as per Our Working (Closing Balance — Computed, 31-March)</td><td colspan="3">${fmt(c.closingComputed31Mar)}</td></tr>
+  <tr class="total"><td class="lbl">Net Difference to Search For</td><td colspan="3" class="diffcell">${fmt(c.netDiffToSearch)}</td></tr>
+  ` : ""}
   </tbody></table>
   <div class="legend">
     <span><span class="swatch" style="background:var(--blue-d)"></span>As per Return</span>
@@ -943,7 +977,7 @@ async function downloadExcel(c){
     return {sheet:ws, totalRow:r};
   }
   const led = state.ledger;
-  ledgerSheet("Credit Ledger", led.credit.opening, led.credit.monthly, "accrued","utilised","ITC Accrued (Cr)","ITC Utilised (Dr)");
+  const creditLedgerInfo = ledgerSheet("Credit Ledger", led.credit.opening, led.credit.monthly, "accrued","utilised","ITC Accrued (Cr)","ITC Utilised (Dr)");
   ledgerSheet("Cash Ledger", led.cash.cashOpening, led.cash.cashMonthly, "cr","dr","Cash Deposited (Cr)","Cash Utilised (Dr)");
   ledgerSheet("Fees Int Penalty Others", led.cash.fpOpening, led.cash.fpMonthly, "cr","dr","Deposited (Cr)","Utilised (Dr)");
 
@@ -998,7 +1032,29 @@ async function downloadExcel(c){
   wsS.getCell(r,1).value="Diff — Computed (full year) vs Books/Portal";
   wsS.getCell(r,5).value={formula:`E${closeCompRow}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5)); r++;
   wsS.getCell(r,1).value="Diff — Computed (31-March) vs Books/Portal";
-  wsS.getCell(r,5).value={formula:`E${close31Row}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5));
+  wsS.getCell(r,5).value={formula:`E${close31Row}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5)); r+=2;
+
+  wsS.getCell(r,1).value="Portal Reconciliation Bridge"; wsS.getCell(r,1).font={bold:true}; r++;
+  wsS.getCell(r,1).value="Balance as per Portal (Electronic Credit Ledger)";
+  wsS.getCell(r,5).value={formula:`'Credit Ledger'!H${creditLedgerInfo.totalRow}+'Credit Ledger'!I${creditLedgerInfo.totalRow}+'Credit Ledger'!J${creditLedgerInfo.totalRow}`};
+  const portalBalRow=r; r++;
+  wsS.getCell(r,1).value="Add/(Less): Output Difference (Return − Books, already identified)";
+  wsS.getCell(r,5).value={formula:`Output!K${outTotalRow}+Output!L${outTotalRow}+Output!M${outTotalRow}`};
+  const outDiffRow=r; r++;
+  wsS.getCell(r,1).value="Add/(Less): Input Difference (Return − Books, already identified)";
+  wsS.getCell(r,5).value={formula:`-('Input (ITC)'!H${inTotalRow}+'Input (ITC)'!I${inTotalRow}+'Input (ITC)'!J${inTotalRow})`};
+  const inDiffRow=r; r++;
+  wsS.getCell(r,1).value="Revised Portal Balance";
+  wsS.getCell(r,5).value={formula:`SUM(E${portalBalRow}:E${inDiffRow})`};
+  tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5));
+  const revisedPortalRow=r; r++;
+  wsS.getCell(r,1).value="Balance as per Our Working (Closing Balance — Computed, 31-March)";
+  wsS.getCell(r,5).value={formula:`E${close31Row}`};
+  const ourWorkingRow=r; r++;
+  wsS.getCell(r,1).value="Net Difference to Search For";
+  wsS.getCell(r,5).value={formula:`E${revisedPortalRow}+E${ourWorkingRow}`};
+  tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5));
+
   for(let rr=gr;rr<=r;rr++) for(let cc=1;cc<=5;cc++) wsS.getCell(rr,cc).numFmt=numFmt===wsS.getCell(rr,cc).numFmt?numFmt:numFmt;
   wsS.getColumn(1).width=42; ["B","C","D","E"].forEach(cl=>wsS.getColumn(cl).width=15);
 
