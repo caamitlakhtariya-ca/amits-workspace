@@ -159,7 +159,8 @@ let state = { yearly:null, ledger:null, srData:null, prData:null, meta:{} };
 
 const elCompanyName = document.getElementById("mCompanyName");
 const elGstin = document.getElementById("mGstin");
-elCompanyName.addEventListener("input", ()=>{ state.meta.companyName = elCompanyName.value.trim() || null; });
+let companyNameEditedByUser = false;
+elCompanyName.addEventListener("input", ()=>{ companyNameEditedByUser = true; state.meta.companyName = elCompanyName.value.trim() || null; });
 elGstin.addEventListener("input", ()=>{ state.meta.gstin = elGstin.value.trim().toUpperCase() || null; });
 
 function readWorkbook(file){
@@ -187,7 +188,7 @@ function extractCompanyName(filename){
   return base || null;
 }
 function updateMetaFromFile(file){
-  if(elCompanyName.value.trim()) return; // don't override a manually entered name
+  if(companyNameEditedByUser) return; // don't override a manually entered name
   const name = extractCompanyName(file.name);
   if(name){ state.meta.companyName = name; elCompanyName.value = name; }
 }
