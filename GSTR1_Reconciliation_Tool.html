@@ -250,6 +250,45 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return /Cr/.test(z);
   }
 
+  // Convert an Excel date serial (1900 date system) to a UTC-midnight-anchored JS Date, without ever
+  // going through a locale/local-timezone Date constructor. The workbook is read with cellDates:false
+  // (see readFileAsWorkbook) specifically so date cells stay raw numbers and are converted here — the
+  // reader library's own cellDates:true decode builds the Date via LOCAL date components, so on a
+  // machine/browser set to a timezone ahead of UTC (e.g. IST, UTC+5:30) every date silently rolls back
+  // by one calendar day (1-Apr becomes 31-Mar). This ms-arithmetic conversion is timezone-invariant.
+  function excelSerialToUTCDate(serial) {
+    if (typeof serial !== 'number' || isNaN(serial)) return null;
+    var wholeDays = Math.floor(serial);
+    var fraction = serial - wholeDays;
+    var ms = (wholeDays - 25569) * 86400000 + Math.round(fraction * 86400000);
+    return new Date(ms);
+  }
+
+  // Read a "Date" column cell as a UTC-safe JS Date, whatever form the reader library gave us for it
+  // (a raw numeric serial — the expected case now that cellDates:false — a Date object, or text).
+  function readDateCellValue(cell) {
+    if (!cell || cell.v === undefined || cell.v === null || cell.v === '') return null;
+    if (typeof cell.v === 'number') return excelSerialToUTCDate(cell.v);
+    if (cell.v instanceof Date) return cell.v;
+    return cell.v;
+  }
+
+  // For GSTR-1 Doc Date / Period columns, which the GST portal exports almost always store as plain
+  // text (e.g. "01/04/2025") — left untouched here. Only if a cell turns out to be a genuinely
+  // date-formatted number is it converted, back to that same DD/MM/YYYY text shape, so the
+  // downstream period-parsing regexes keep working regardless of which form the export used.
+  function readDateOrTextCellValue(cell) {
+    if (!cell || cell.v === undefined || cell.v === null || cell.v === '') return null;
+    if (typeof cell.v === 'number' && cell.z && /[dmy]/i.test(String(cell.z))) {
+      var d = excelSerialToUTCDate(cell.v);
+      if (d && !isNaN(d.getTime())) {
+        var dd = ('0' + d.getUTCDate()).slice(-2), mm = ('0' + (d.getUTCMonth() + 1)).slice(-2);
+        return dd + '/' + mm + '/' + d.getUTCFullYear();
+      }
+    }
+    return cell.v;
+  }
+
   // Fixed (non-tax, non-taxable-component) columns present in every Tally Sales/CN/DN register export
   var FIXED_COLS = ['DATE', 'PARTICULARS', 'VOUCHER TYPE', 'VOUCHER NO.', 'GSTIN/UIN', 'VALUE', 'GROSS TOTAL'];
 
@@ -332,7 +371,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if (particulars === undefined || particulars === null || String(particulars).trim() === '') continue;
       if (String(particulars).trim().toLowerCase() === 'grand total') continue;
 
-      var dateVal = dateCol !== undefined && ws[XLSXaddr(r, dateCol)] ? ws[XLSXaddr(r, dateCol)].v : null;
+      var dateVal = dateCol !== undefined ? readDateCellValue(ws[XLSXaddr(r, dateCol)]) : null;
       var vno = vnoCol !== undefined && ws[XLSXaddr(r, vnoCol)] ? ws[XLSXaddr(r, vnoCol)].v : null;
       var gstin = gstinCol !== undefined && ws[XLSXaddr(r, gstinCol)] ? ws[XLSXaddr(r, gstinCol)].v : '';
       var vtypeCell = vtypeCol !== undefined ? ws[XLSXaddr(r, vtypeCol)] : null;
@@ -561,8 +600,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           GSTIN: cGstin !== undefined ? (cellVal(ws, r, cGstin) || '') : '',
           Party: cParty !== undefined ? (cellVal(ws, r, cParty) || '') : '',
           DocNo: docno,
-          DocDate: cDocdate !== undefined ? cellVal(ws, r, cDocdate) : null,
-          Period: cPeriod !== undefined ? (cellVal(ws, r, cPeriod) || '') : '',
+          DocDate: cDocdate !== undefined ? readDateOrTextCellValue(ws[XLSXaddr(r, cDocdate)]) : null,
+          Period: cPeriod !== undefined ? (readDateOrTextCellValue(ws[XLSXaddr(r, cPeriod)]) || '') : '',
           InvoiceValue: round2(sign * (numOr0(cellVal(ws, r, cInvval)))),
           TaxableValue: round2(sign * (numOr0(cellVal(ws, r, cTaxval)))),
           IGST: round2(sign * (numOr0(cellVal(ws, r, cIgst)))),
@@ -627,11 +666,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           GSTIN: '',
           Party: 'B2C Unregistered — POS ' + pos + rateTxt,
           DocNo: '', DocDate: '',
-          Period: cPeriod !== undefined ? (cellVal(ws, r, cPeriod) || '') : '',
+          Period: cPeriod !== undefined ? (readDateOrTextCellValue(ws[XLSXaddr(r, cPeriod)]) || '') : '',
           IsSummary: true,
           InvoiceValue: round2(tax + ig + cg + sg),
           TaxableValue: round2(tax), IGST: round2(ig), CGST: round2(cg), SGST: round2(sg),
-          AmendmentNote: isAmendment ? 'B2CSA amendment of period ' + (cPeriod !== undefined ? cellVal(ws, r, cPeriod) : '') + ' — verify against the original B2CS row; amounts here are the REVISED figures' : ''
+          AmendmentNote: isAmendment ? 'B2CSA amendment of period ' + (cPeriod !== undefined ? readDateOrTextCellValue(ws[XLSXaddr(r, cPeriod)]) : '') + ' — verify against the original B2CS row; amounts here are the REVISED figures' : ''
         });
       }
     }
@@ -825,7 +864,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     normHeader: normHeader, normKey: normKey, isDr: isDr, isCr: isCr,
     parseTallyRegister: parseTallyRegister, parseGSTR1Workbook: parseGSTR1Workbook,
     matchRegisters: matchRegisters, round2: round2, FIXED_COLS: FIXED_COLS,
-    XLSXutils_decode_range: XLSXutils_decode_range
+    XLSXutils_decode_range: XLSXutils_decode_range,
+    excelSerialToUTCDate: excelSerialToUTCDate, readDateCellValue: readDateCellValue
   };
 }));
 
@@ -846,6 +886,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   var NAVY = 'FF1F4E78', TEAL = 'FF0E7C7B', ORANGE = 'FFE36C09', RED = 'FFC00000',
       GREEN = 'FF1E7B34', GOLD = 'FFBF8F00', YELLOW = 'FFFFF7CC', REDLIGHT = 'FFFCE4E4',
       GREENLIGHT = 'FFE2F0D9', INPUTFILL = 'FFFFF2CC', WHITE = 'FFFFFFFF', GREYBORDER = 'FFBFBFBF';
+
+  var WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var SHORT_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // 'Mon Apr 01'-style short label for a UTC-midnight-anchored calendar date. Uses UTC getters
+  // deliberately — the Date objects here represent a date-only value (see
+  // GSTRCore.excelSerialToUTCDate), and reading them with local getters would show the wrong day
+  // whenever this code runs in a timezone behind UTC.
+  function shortDateLabel(d) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+    return WEEKDAY_NAMES[d.getUTCDay()] + ' ' + SHORT_MONTH_NAMES[d.getUTCMonth()] + ' ' + ('0' + d.getUTCDate()).slice(-2);
+  }
 
   function styleHeader(cell) {
     cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: WHITE } };
@@ -1073,7 +1124,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if (d === null || d === undefined || d === '') return null;
       var dt = d instanceof Date ? d : new Date(d);
       if (isNaN(dt.getTime())) return null;
-      return dt.getFullYear() * 100 + (dt.getMonth() + 1);
+      // These Date objects are UTC-midnight-anchored calendar dates (see GSTRCore.excelSerialToUTCDate) —
+      // always read them back with UTC getters, never local ones, or the bucket shifts a day depending
+      // on which timezone this code happens to run in.
+      return dt.getUTCFullYear() * 100 + (dt.getUTCMonth() + 1);
     }
     function monthKeyFromPeriod(p) {
       var s = String(p === null || p === undefined ? '' : p).replace(/\D/g, '');
@@ -1291,7 +1345,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
     r = mdHr + 1;
     mdSorted.forEach(function (m) {
-      var vals = [m.BillNo, m.Date ? String(m.Date).slice(0, 10) : '', m.Party, m.VoucherType, m.GSTR1Tab,
+      var vals = [m.BillNo, m.Date ? shortDateLabel(m.Date) : '', m.Party, m.VoucherType, m.GSTR1Tab,
         m.T_Inv, m.G_Inv, m.D_Inv, m.T_Tax, m.G_Tax, m.D_Tax, m.T_I, m.G_I, m.D_I, m.T_C, m.G_C, m.D_C, m.T_S, m.G_S, m.D_S, m.Status,
         m.G_DocNo || '', m.MatchNote || ''];
       vals.forEach(function (v, i) {
@@ -1342,7 +1396,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     mmSorted.forEach(function (m) {
       var badHeads = mmHeads.filter(function (h) { return Math.abs(m[h.diff] || 0) > TOL; });
       var totalTaxDiff = Math.round(((m.D_I || 0) + (m.D_C || 0) + (m.D_S || 0)) * 100) / 100;
-      var vals = [m.BillNo, m.G_DocNo || '', m.Date ? String(m.Date).slice(0, 10) : '', m.Party, m.VoucherType, m.GSTR1Tab,
+      var vals = [m.BillNo, m.G_DocNo || '', m.Date ? shortDateLabel(m.Date) : '', m.Party, m.VoucherType, m.GSTR1Tab,
         badHeads.map(function (h) { return h.name; }).join(', '),
         m.T_Inv, m.G_Inv, m.D_Inv, m.T_Tax, m.G_Tax, m.D_Tax, m.T_I, m.G_I, m.D_I,
         m.T_C, m.G_C, m.D_C, m.T_S, m.G_S, m.D_S, totalTaxDiff, '', m.MatchNote || ''];
@@ -1403,7 +1457,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         (isB2csLikely ? 'No GSTIN in books - likely reported under B2CS (aggregate B2C summary); verify amounts on Monthly Summary / GSTR-1 Register B2CS rows' :
         (twin ? 'NEEDS REVIEW - GSTIN DISCREPANCY: GSTR-1 has doc "' + twin[0].DocNo + '" (' + (twin[0].Party || '') + ') under GSTIN ' + (twin[0].GSTIN || '(blank)') + ' vs books GSTIN ' + (x.GSTIN || '(blank)') + ' - verify which GSTIN is correct' :
         'NEEDS REVIEW - genuinely missing in GSTR-1')));
-      var vals = [x.Date ? String(x.Date).slice(0, 10) : '', x.CustomerName, x.GSTIN || '', x.VoucherType, x.BillNo,
+      var vals = [x.Date ? shortDateLabel(x.Date) : '', x.CustomerName, x.GSTIN || '', x.VoucherType, x.BillNo,
         x.InvoiceValue, x.TaxableValue, x.IGST, x.CGST, x.SGST, remark];
       vals.forEach(function (v, i) {
         var cell = ex.getCell(r, i + 1);
@@ -1473,7 +1527,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       reader.onload = function (e) {
         try {
           var data = new Uint8Array(e.target.result);
-          var wb = XLSX.read(data, { type: 'array', cellStyles: true, cellNF: true, cellDates: true });
+          // cellDates:false — keep date cells as raw serial numbers. SheetJS's own cellDates:true
+          // decode builds the Date object from LOCAL date components, which silently rolls every date
+          // back a day on a browser set to a timezone ahead of UTC (e.g. IST). We convert serials
+          // ourselves via GSTRCore.excelSerialToUTCDate, which is timezone-invariant.
+          var wb = XLSX.read(data, { type: 'array', cellStyles: true, cellNF: true, cellDates: false });
           resolve(wb);
         } catch (err) { reject(err); }
       };
