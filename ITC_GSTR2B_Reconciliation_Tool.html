@@ -184,7 +184,11 @@ function getCell(ws,r,c){ return ws[cellRef(r,c)]; }
 function cellVal(ws,r,c){ const cell=getCell(ws,r,c); return cell? cell.v : undefined; }
 function cellFmt(ws,r,c){ const cell=getCell(ws,r,c); return cell? (cell.z||'') : ''; }
 function toISO(d){
-  if(d instanceof Date) return d.toISOString().slice(0,10);
+  // Dates must be handled as raw Excel serials (via XLSX.SSF.parse_date_code), never as JS Date
+  // objects: SheetJS builds cellDates Date objects from local-timezone components, so converting
+  // one back with .toISOString() (UTC) silently shifts the date by the browser's UTC offset —
+  // e.g. in IST (UTC+5:30) every date read back one calendar day early.
+  if(d instanceof Date) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   if(typeof d === 'number'){ const dt = XLSX.SSF.parse_date_code(d); return `${dt.y}-${String(dt.m).padStart(2,'0')}-${String(dt.d).padStart(2,'0')}`; }
   return d ? String(d).slice(0,10) : '';
 }
@@ -228,7 +232,7 @@ document.getElementById('ledgerInput').addEventListener('change', function(e){
     const reader = new FileReader();
     reader.onload = function(ev){
       const data = new Uint8Array(ev.target.result);
-      const wb = XLSX.read(data, {type:'array', cellNF:true, cellDates:true});
+      const wb = XLSX.read(data, {type:'array', cellNF:true});
       const ws = wb.Sheets[wb.SheetNames[0]];
       STATE.files.push({name:f.name, ws:ws});
       renderFileList();
@@ -516,7 +520,7 @@ document.getElementById('btnDownloadReview').addEventListener('click', async fun
   const startRow = headerRow.number+1;
   STATE.reviewRows.forEach(r=>{
     const row = ws.addRow([r.row_key, null, r.party, r.voucher_type, r.voucher_no, r.source_file, r.TV, r.I, r.C, r.S, r.suggested_category||'', r.suggested_category ? r.suggested_category.replace(' (suggested - please confirm)','') : '', '']);
-    if(r.date){ const [y,m,d]=r.date.split('-').map(Number); row.getCell(2).value = new Date(y,m-1,d); row.getCell(2).numFmt='dd-mm-yyyy'; }
+    if(r.date){ const [y,m,d]=r.date.split('-').map(Number); row.getCell(2).value = new Date(Date.UTC(y,m-1,d)); row.getCell(2).numFmt='dd-mm-yyyy'; }
     [7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
     row.getCell(1).font = {size:8, color:{argb:'FF888888'}};
   });
@@ -555,7 +559,7 @@ document.getElementById('reviewUploadInput').addEventListener('change', function
   const reader = new FileReader();
   reader.onload = function(ev){
     const data = new Uint8Array(ev.target.result);
-    const wb = XLSX.read(data, {type:'array', cellNF:true, cellDates:true});
+    const wb = XLSX.read(data, {type:'array', cellNF:true});
     const ws = wb.Sheets[wb.SheetNames[0]];
     const range = XLSX.utils.decode_range(ws['!ref']);
     const classificationMap = {};
@@ -639,7 +643,7 @@ document.getElementById('gstr2bInput').addEventListener('change', function(e){
   const reader = new FileReader();
   reader.onload = function(ev){
     const data = new Uint8Array(ev.target.result);
-    const wb = XLSX.read(data, {type:'array', cellNF:true, cellDates:true});
+    const wb = XLSX.read(data, {type:'array', cellNF:true});
     parse2B(wb);
   };
   reader.readAsArrayBuffer(f);
@@ -904,7 +908,9 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     if(!iso) return;
     const [y,m,d] = iso.split('-').map(Number);
     const cell = row.getCell(col);
-    cell.value = new Date(y, m-1, d);
+    // Date.UTC (not the local-timezone Date ctor) keeps the serial number ExcelJS writes
+    // independent of the browser's timezone — see toISO() for why local construction shifts dates.
+    cell.value = new Date(Date.UTC(y, m-1, d));
     cell.numFmt = dateFmt;
   }
 
