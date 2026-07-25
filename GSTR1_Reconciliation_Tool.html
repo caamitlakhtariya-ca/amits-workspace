@@ -1545,7 +1545,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return { name: name, gstin: gstin, period: period };
   }
 
-  function populateMapping(ws, range) {
+  // Extract the non-fixed column headers from a Tally register workbook (Sales/CN/DN).
+  // Returns [] if the workbook is absent or no header row can be found.
+  function extractRegisterHeaders(wb, preferredNames) {
+    if (!wb) return [];
+    var sheetName = firstSheetGuess(wb, preferredNames);
+    var ws = wb.Sheets[sheetName];
+    if (!ws || !ws['!ref']) return [];
+    var range = GSTRCore.XLSXutils_decode_range(ws['!ref']);
+
     var headerRow = -1;
     for (var r = range.s.r; r <= Math.min(range.s.r + 20, range.e.r); r++) {
       var hasDate = false, hasPart = false;
@@ -1558,7 +1566,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }
       if (hasDate && hasPart) { headerRow = r; break; }
     }
-    if (headerRow === -1) { logLine('Could not detect header row in Sales Register. Please check the file format.', 'err'); return; }
+    if (headerRow === -1) return [];
 
     var headers = [];
     for (var cc = range.s.c; cc <= range.e.c; cc++) {
@@ -1568,6 +1576,35 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (GSTRCore.FIXED_COLS.indexOf(GSTRCore.normHeader(hv)) === -1) headers.push(hv);
       }
     }
+    return headers;
+  }
+
+  // Merge the ledger columns from Sales + Credit Note + Debit Note registers so every
+  // GST column across all uploaded registers (e.g. a CN-only "Input CGST"/"Input SGST"
+  // ledger that never appears in the Sales Register) can be mapped, not just Sales columns.
+  function mergedRegisterHeaders() {
+    var lists = [
+      extractRegisterHeaders(state.salesWb, ['Sales Register']),
+      extractRegisterHeaders(state.cnWb, ['Credit Note Register', 'Credit Note']),
+      extractRegisterHeaders(state.dnWb, ['Debit Note Register', 'Debit Note'])
+    ];
+    var seen = {}, merged = [];
+    lists.forEach(function (list) {
+      list.forEach(function (h) {
+        var key = GSTRCore.normHeader(h);
+        if (!seen[key]) { seen[key] = true; merged.push(h); }
+      });
+    });
+    return merged;
+  }
+
+  function populateMapping(headers) {
+    // Preserve any selections the user already made for headers that still exist.
+    var existing = {};
+    document.querySelectorAll('.col-map-select').forEach(function (sel) {
+      existing[sel.dataset.header] = sel.value;
+    });
+
     state.salesHeaders = headers;
 
     var tbody = $('mappingBody');
@@ -1583,7 +1620,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         { v: 'CGST', t: 'CGST' },
         { v: 'SGST', t: 'SGST' }
       ];
-      var guess = guessTaxHead(h);
+      var guess = existing.hasOwnProperty(h) ? existing[h] : guessTaxHead(h);
       options.forEach(function (o) {
         var opt = document.createElement('option'); opt.value = o.v; opt.textContent = o.t;
         if (o.v === guess) opt.selected = true;
@@ -1605,18 +1642,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   function maybeShowMapping() {
-    if (state.salesWb && !$('mappingCard').dataset.built) {
+    if (!state.salesWb) return;
+
+    populateMapping(mergedRegisterHeaders());
+
+    if (!$('mappingCard').dataset.built) {
       var sheetName = firstSheetGuess(state.salesWb, ['Sales Register']);
       var ws = state.salesWb.Sheets[sheetName];
       var range = GSTRCore.XLSXutils_decode_range(ws['!ref']);
-      populateMapping(ws, range);
       var info = autoDetectClientInfo(ws, range);
       $('clientName').value = info.name || '';
       $('clientGstin').value = info.gstin || '';
       $('clientPeriod').value = info.period || '';
-      $('mappingCard').style.display = 'block';
       $('mappingCard').dataset.built = '1';
     }
+    $('mappingCard').style.display = 'block';
   }
 
   setupUpload('box-sales', 'file-sales', 'fname-sales', function (file, wb) { state.salesFile = file; state.salesWb = wb; });
