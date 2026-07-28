@@ -898,12 +898,21 @@ document.getElementById('btnDownload').addEventListener('click', async function(
   const wb = new ExcelJS.Workbook();
   const moneyFmt = '#,##0.00;(#,##0.00);"-"';
   const dateFmt = 'dd-mm-yyyy';
-  const headerFill = {type:'pattern', pattern:'solid', fgColor:{argb:'FF1F4E78'}};
-  const headerFont = {bold:true, color:{argb:'FFFFFFFF'}};
 
-  function styleHeader(ws, rowIdx){
-    ws.getRow(rowIdx).eachCell(cell=>{ cell.fill = headerFill; cell.font = headerFont; cell.alignment={horizontal:'center', wrapText:true}; });
+  const NAVY='FF1F4E78', TEAL='FF0E7C7B', ORANGE='FFE36C09', RED='FFC00000', GREEN='FF1E7B34',
+        GOLD='FFBF8F00', REDLIGHT='FFFCE4E4', WHITE='FFFFFFFF', GREYBORDER='FFBFBFBF';
+  const headerFill = {type:'pattern', pattern:'solid', fgColor:{argb:NAVY}};
+  const headerFont = {bold:true, color:{argb:WHITE}};
+
+  function thinBorder(){
+    return {top:{style:'thin',color:{argb:GREYBORDER}}, left:{style:'thin',color:{argb:GREYBORDER}},
+            bottom:{style:'thin',color:{argb:GREYBORDER}}, right:{style:'thin',color:{argb:GREYBORDER}}};
   }
+  function styleHeader(ws, rowIdx){
+    ws.getRow(rowIdx).eachCell(cell=>{ cell.fill = headerFill; cell.font = headerFont; cell.alignment={horizontal:'center', wrapText:true}; cell.border = thinBorder(); });
+  }
+  function styleTitle(cell, text){ cell.value = text; cell.font = {size:15, bold:true, color:{argb:NAVY}}; }
+  function styleSub(cell, text){ cell.value = text; cell.font = {size:9, italic:true, color:{argb:'FF666666'}}; }
   function addDateCell(row, col, iso){
     if(!iso) return;
     const [y,m,d] = iso.split('-').map(Number);
@@ -912,6 +921,247 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     // independent of the browser's timezone — see toISO() for why local construction shifts dates.
     cell.value = new Date(Date.UTC(y, m-1, d));
     cell.numFmt = dateFmt;
+  }
+  function monthlyOf(rows){
+    const m = {};
+    rows.forEach(r=>{
+      if(!r.date) return;
+      const [y,mo] = r.date.split('-').map(Number);
+      const key = `${y}-${mo}`;
+      if(!m[key]) m[key] = {TV:0,I:0,C:0,S:0};
+      m[key].TV+=r.TV||0; m[key].I+=r.I||0; m[key].C+=r.C||0; m[key].S+=r.S||0;
+    });
+    return m;
+  }
+  const tol = parseFloat(document.getElementById('tolerance').value)||10;
+  const tbPoolFull = build2BPool(); // full "as per GSTR-2B" population (B2B regular + CDNR), same universe the main match pass compares PR against
+
+  // ============================= DASHBOARD =============================
+  {
+    const d = wb.addWorksheet('Dashboard', {views:[{showGridLines:false}]});
+    styleTitle(d.getCell('B2'), 'ITC vs GSTR-2B Reconciliation — Dashboard');
+    styleSub(d.getCell('B3'), 'Generated ' + new Date().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}));
+
+    function sumBy(rows, key){ return rows.reduce((a,x)=>a+(x[key]||0),0); }
+    const prTV=sumBy(STATE.prLines,'TV'), prI=sumBy(STATE.prLines,'I'), prC=sumBy(STATE.prLines,'C'), prS=sumBy(STATE.prLines,'S');
+    const tbTV=sumBy(tbPoolFull,'TV'), tbI=sumBy(tbPoolFull,'I'), tbC=sumBy(tbPoolFull,'C'), tbS=sumBy(tbPoolFull,'S');
+    const taxDiff = (prI+prC+prS) - (tbI+tbC+tbS);
+
+    const cards = [
+      {label:'TOTAL TAX MATCH', val: Math.abs(taxDiff)<=tol ? 'NIL DIFF' : ('₹'+Math.round(taxDiff).toLocaleString('en-IN')), color: Math.abs(taxDiff)<=tol ? GREEN : RED},
+      {label:'INVOICES MATCHED', val:String(STATE.match.matched.length), color:TEAL},
+      {label:'ITC AT RISK (PR ONLY)', val:String(STATE.match.prOnlyFinal.length), color: STATE.match.prOnlyFinal.length ? RED : GREEN},
+      {label:'UNCLAIMED ITC (2B ONLY)', val:String(STATE.match.tbOnly.length), color: STATE.match.tbOnly.length ? RED : GREEN},
+      {label:'RCM NOT BOOKED', val:String(STATE.match.rcm2bUnmatched.length), color: STATE.match.rcm2bUnmatched.length ? GOLD : GREEN},
+    ];
+    let col = 2;
+    cards.forEach(card=>{
+      for(let rr=5; rr<=8; rr++) for(let cc=col; cc<=col+1; cc++) d.getCell(rr,cc).fill = {type:'pattern',pattern:'solid',fgColor:{argb:card.color}};
+      d.mergeCells(5,col,5,col+1);
+      const c1 = d.getCell(5,col); c1.value = card.label; c1.font={size:9,bold:true,color:{argb:WHITE}}; c1.alignment={horizontal:'center',vertical:'middle',wrapText:true};
+      d.mergeCells(6,col,8,col+1);
+      const c2 = d.getCell(6,col); c2.value = card.val; c2.font={size:18,bold:true,color:{argb:WHITE}}; c2.alignment={horizontal:'center',vertical:'middle'};
+      col += 3;
+    });
+
+    // Tax-head comparison: PR vs 2B, with in-cell data bars
+    let r0 = 11;
+    d.getCell(r0,2).value = 'Tax-Head Comparison: Books (PR) vs GSTR-2B'; d.getCell(r0,2).font = {size:10,bold:true};
+    const hr = r0+1;
+    ['Head','Books (PR)','GSTR-2B','Diff'].forEach((h,i)=>{ const c=d.getCell(hr,2+i); c.value=h; styleHeader(d,hr); });
+    const compRows = [['Taxable Value',prTV,tbTV],['IGST',prI,tbI],['CGST',prC,tbC],['SGST',prS,tbS]];
+    let rr = hr+1; const compFirst = rr;
+    compRows.forEach(row=>{
+      d.getCell(rr,2).value = row[0]; d.getCell(rr,2).font={size:10}; d.getCell(rr,2).border=thinBorder();
+      const c3=d.getCell(rr,3); c3.value=round2(row[1]); c3.numFmt=moneyFmt; c3.border=thinBorder();
+      const c4=d.getCell(rr,4); c4.value=round2(row[2]); c4.numFmt=moneyFmt; c4.border=thinBorder();
+      const c5=d.getCell(rr,5); c5.value={formula:`C${rr}-D${rr}`}; c5.numFmt=moneyFmt; c5.border=thinBorder();
+      rr++;
+    });
+    const compLast = rr-1;
+    d.addConditionalFormatting({ref:`C${compFirst}:D${compLast}`, rules:[{type:'dataBar', gradient:false, border:false, minLength:0, maxLength:100, color:{argb:NAVY}, cfvo:[{type:'min'},{type:'max'}]}]});
+    d.addConditionalFormatting({ref:`E${compFirst}:E${compLast}`, rules:[{type:'cellIs', operator:'notEqual', formulae:[0], style:{fill:{type:'pattern',pattern:'solid',bgColor:{argb:REDLIGHT}}}}]});
+
+    // Match status breakdown
+    const r1 = compLast+3;
+    d.getCell(r1,2).value = 'Match Status Breakdown'; d.getCell(r1,2).font = {size:10,bold:true};
+    const hr1 = r1+1;
+    ['Status','Count'].forEach((h,i)=>{ const c=d.getCell(hr1,2+i); c.value=h; });
+    styleHeader(d,hr1);
+    const statusRows = [
+      ['Matched (PR = 2B)', STATE.match.matched.length, TEAL],
+      ['ITC at Risk (PR only)', STATE.match.prOnlyFinal.length, STATE.match.prOnlyFinal.length?RED:GREEN],
+      ['Unclaimed ITC (2B only)', STATE.match.tbOnly.length, STATE.match.tbOnly.length?RED:GREEN],
+      ['RCM Recovered (cross-match)', STATE.match.rcmMatched.length, GREEN],
+      ['RCM Not Booked in PR', STATE.match.rcm2bUnmatched.length, STATE.match.rcm2bUnmatched.length?GOLD:GREEN],
+    ];
+    rr = hr1+1;
+    statusRows.forEach(row=>{
+      d.getCell(rr,2).value = row[0]; d.getCell(rr,2).font={size:10}; d.getCell(rr,2).border=thinBorder();
+      const c3=d.getCell(rr,3); c3.value=row[1]; c3.border=thinBorder();
+      c3.fill = {type:'pattern',pattern:'solid',fgColor:{argb:row[2]}}; c3.font={size:10,bold:true,color:{argb:WHITE}}; c3.alignment={horizontal:'center'};
+      rr++;
+    });
+
+    // Register composition
+    const r2 = rr+2;
+    d.getCell(r2,2).value = 'Register Composition'; d.getCell(r2,2).font = {size:10,bold:true};
+    const hr2 = r2+1;
+    ['Category','Row Count'].forEach((h,i)=>{ const c=d.getCell(hr2,2+i); c.value=h; });
+    styleHeader(d,hr2);
+    const catRows = [
+      ['Normal ITC (PR Final)', STATE.prLines.length],
+      ['Import ITC', STATE.buckets['Import ITC'].length],
+      ['Reversal / P&L Expense', STATE.buckets['Reversal/P&L Expense'].length],
+      ['RCM', STATE.buckets['RCM'].length],
+      ['GST Cash Payment', STATE.buckets['GST Cash Payment to Department'].length],
+      ['Offset - Ignore', STATE.buckets['Offset - Ignore'].length],
+    ];
+    rr = hr2+1; const catFirst = rr;
+    catRows.forEach(row=>{
+      d.getCell(rr,2).value = row[0]; d.getCell(rr,2).font={size:10}; d.getCell(rr,2).border=thinBorder();
+      const c3=d.getCell(rr,3); c3.value=row[1]; c3.border=thinBorder();
+      rr++;
+    });
+    d.addConditionalFormatting({ref:`C${catFirst}:C${rr-1}`, rules:[{type:'dataBar', gradient:false, border:false, color:{argb:TEAL}, cfvo:[{type:'min'},{type:'max'}]}]});
+
+    d.columns = [{width:3},{width:32},{width:16},{width:16},{width:16}];
+  }
+
+  // Sheet: Monthly Summary of ITC (FY Apr-Mar ordered) — Books (PR) vs GSTR-2B, with difference
+  {
+    const ws = wb.addWorksheet('Monthly Summary of ITC');
+    styleTitle(ws.getCell('A1'), 'Monthly Summary — Books (PR) vs GSTR-2B');
+    styleSub(ws.getCell('A2'), `Books grouped by voucher date; GSTR-2B by document date (B2B regular + CDNR — the same population matched against PR). Red cells = difference beyond the ₹${tol} tolerance. Large swings in individual months are normal when an invoice's voucher date and its 2B filing period fall in different months — they offset across months. Only the Grand Total row is the real reconciliation check; trace it to the ITC at Risk / Unclaimed ITC / GSTIN Summary tabs.`);
+    ws.mergeCells('A1:G1'); ws.mergeCells('A2:N2');
+
+    const groupRow = 4, hr = 5;
+    ws.mergeCells(groupRow,2,groupRow,6);
+    ws.mergeCells(groupRow,7,groupRow,11);
+    ws.mergeCells(groupRow,12,groupRow,16);
+    const g1=ws.getCell(groupRow,2); g1.value='As per Books / Purchase Register (PR)'; styleHeader(ws,groupRow);
+    const g2=ws.getCell(groupRow,7); g2.value='As per GSTR-2B'; g2.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; g2.font=headerFont; g2.alignment={horizontal:'center',wrapText:true};
+    const g3=ws.getCell(groupRow,12); g3.value='Difference (PR - 2B)'; g3.fill={type:'pattern',pattern:'solid',fgColor:{argb:ORANGE}}; g3.font=headerFont; g3.alignment={horizontal:'center',wrapText:true};
+
+    const subHeads = ['Taxable Value','IGST','CGST','SGST','Invoice Value'];
+    ws.getCell(hr,1).value = 'Month';
+    for(let grp=0; grp<3; grp++) subHeads.forEach((h,i)=>{ ws.getCell(hr, 2+grp*5+i).value = h; });
+    styleHeader(ws, hr);
+
+    const monthNames = {4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec',1:'Jan',2:'Feb',3:'Mar'};
+    const prMonthly = monthlyOf(STATE.prLines);
+    const tbMonthly = monthlyOf(tbPoolFull);
+    const fyStartCounts = {};
+    STATE.prLines.forEach(p=>{
+      if(!p.date) return;
+      const [y,m] = p.date.split('-').map(Number);
+      const fyStartYear = m>=4 ? y : y-1;
+      fyStartCounts[fyStartYear] = (fyStartCounts[fyStartYear]||0)+1;
+    });
+    let fyStart = null, bestCount = -1;
+    Object.keys(fyStartCounts).forEach(y=>{ if(fyStartCounts[y] > bestCount){ bestCount = fyStartCounts[y]; fyStart = +y; } });
+    if(fyStart===null) fyStart = new Date().getFullYear();
+    const fyMonths = [];
+    for(let i=0;i<12;i++){
+      const m = ((3+i)%12)+1;
+      const y = m>=4 ? fyStart : fyStart+1;
+      fyMonths.push([y,m]);
+    }
+
+    let r = hr+1; const firstDataRow = r;
+    fyMonths.forEach(([y,m])=>{
+      const key = `${y}-${m}`;
+      const p = prMonthly[key] || {TV:0,I:0,C:0,S:0};
+      const t = tbMonthly[key] || {TV:0,I:0,C:0,S:0};
+      const pIV = round2(p.TV+p.I+p.C+p.S), tIV = round2(t.TV+t.I+t.C+t.S);
+      const diffs = [p.TV-t.TV, p.I-t.I, p.C-t.C, p.S-t.S, pIV-tIV];
+      const vals = [`${monthNames[m]}-${String(y).slice(2)}`, p.TV, p.I, p.C, p.S, pIV, t.TV, t.I, t.C, t.S, tIV, diffs[0], diffs[1], diffs[2], diffs[3], diffs[4]];
+      vals.forEach((v,i)=>{
+        const cell = ws.getCell(r, i+1);
+        cell.value = (i===0) ? v : round2(v);
+        cell.border = thinBorder();
+        if(i>=1) cell.numFmt = moneyFmt;
+      });
+      diffs.forEach((dv,i)=>{
+        if(Math.abs(dv) > tol){
+          const cell = ws.getCell(r, 12+i);
+          cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:REDLIGHT}};
+          cell.font = {bold:true, color:{argb:RED}};
+        }
+      });
+      r++;
+    });
+    const lastDataRow = r-1;
+    ws.getCell(r,1).value = 'Grand Total'; ws.getCell(r,1).font = {bold:true}; ws.getCell(r,1).border = thinBorder();
+    for(let c=2; c<=16; c++){
+      const colLetter = ws.getColumn(c).letter;
+      const tc = ws.getCell(r,c);
+      tc.value = {formula: `SUM(${colLetter}${firstDataRow}:${colLetter}${lastDataRow})`};
+      tc.numFmt = moneyFmt; tc.font = {bold:true}; tc.border = thinBorder();
+    }
+    r += 2;
+    const inWindowYears = new Set(fyMonths.map(([y])=>y));
+    const outlierRows = STATE.prLines.filter(p=>{
+      if(!p.date) return false;
+      const [y,m] = p.date.split('-').map(Number);
+      return !inWindowYears.has(m>=4 ? y : y-1);
+    });
+    if(outlierRows.length>0){
+      const outTV = round2(outlierRows.reduce((s,x)=>s+x.TV+x.I+x.C+x.S,0));
+      styleSub(ws.getCell(r,1), `Note: ${outlierRows.length} PR row(s) dated outside this FY window (TV+Tax ₹${outTV.toLocaleString('en-IN')}) are excluded from this table — check dates on those rows in Purchase Register (Final).`);
+      ws.getCell(r,1).font = {italic:true, color:{argb:RED}};
+    } else {
+      styleSub(ws.getCell(r,1), 'The Grand Total row above is the only figure that represents a genuine, unresolved reconciliation gap — itemised on the ITC at Risk, Unclaimed ITC and GSTIN Summary tabs. Differences on individual month rows largely offset each other and do not need separate investigation.');
+    }
+    ws.mergeCells(`A${r}:P${r}`);
+
+    ws.columns = [{width:12}].concat([14,12,12,12,14, 14,12,12,12,14, 13,11,11,11,13].map(w=>({width:w})));
+    ws.views = [{state:'frozen', xSplit:1, ySplit:hr, showGridLines:false}];
+  }
+
+  function addSoloSheet(name, title, subtitle, rows){
+    const ws = wb.addWorksheet(name);
+    ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
+    const hdr = ws.addRow(['Date','Party','GSTIN','Invoice No.','TV','I','C','S','TAX']);
+    styleHeader(ws, hdr.number);
+    rows.forEach(r=>{
+      const row = ws.addRow(['', r.party, r.gstin, r.inv_raw, r.TV, r.I, r.C, r.S, r.TAX]);
+      addDateCell(row,1,r.date);
+      [5,6,7,8,9].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    ws.columns = [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12}];
+  }
+  function addMatchPairSheet(name, title, subtitle, pairs){
+    const ws = wb.addWorksheet(name);
+    ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
+    const hdr = ws.addRow(['Date','Party (PR)','GSTIN','PR Inv No.','2B Inv No.','PR TV','2B TV','PR Tax','2B Tax','Tax Diff','Match Pass']);
+    styleHeader(ws, hdr.number);
+    pairs.forEach(m=>{
+      const row = ws.addRow(['', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.tb.inv_raw, m.pr.TV, m.tb.TV, m.pr.TAX, m.tb.TAX, round2(m.pr.TAX-m.tb.TAX), m.pass]);
+      addDateCell(row,1,m.pr.date);
+      [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:20}];
+  }
+
+  // Sheets of concern — placed right after the Dashboard / Monthly Summary
+  addSoloSheet('ITC at Risk (PR Only)','ITC at Risk','In PR, not in 2B (post RCM cross-match)', STATE.match.prOnlyFinal);
+  addSoloSheet('Unclaimed ITC (2B Only)','Unclaimed ITC','In 2B, not in PR', STATE.match.tbOnly);
+
+  // GSTIN Summary
+  {
+    const ws = wb.addWorksheet('GSTIN Summary (Unmatched)');
+    ws.addRow(['GSTIN-wise Summary — Unmatched Remainder Only']);
+    ws.addRow(['ITC at Risk + Unclaimed ITC — Matched excluded']);
+    ws.addRow([]);
+    const hdr = ws.addRow(['GSTIN','Party Name','PR Count','PR TV','PR Tax','2B Count','2B TV','2B Tax','Tax Diff','Status']);
+    styleHeader(ws, hdr.number);
+    STATE.gstinSummary.forEach(s=>{
+      const status = Math.abs(s.diff_tax)<=10 ? 'Nets to ~0' : 'Genuine gap';
+      const row = ws.addRow([s.gstin, s.name, s.pr_count, s.pr_tv, s.pr_tax, s.tb_count, s.tb_tv, s.tb_tax, s.diff_tax, status]);
+      [4,5,7,8,9].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+    });
+    ws.columns = [{width:17},{width:28},{width:10},{width:14},{width:13},{width:10},{width:14},{width:13},{width:13},{width:14}];
   }
 
   // Sheet: Purchase Register (Final)
@@ -929,66 +1179,6 @@ document.getElementById('btnDownload').addEventListener('click', async function(
       [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
     });
     ws.columns = [{width:13},{width:26},{width:17},{width:20},{width:16},{width:12},{width:10},{width:10},{width:10},{width:13},{width:26}];
-  }
-
-  // Sheet: Monthly Summary of ITC (FY Apr-Mar ordered)
-  {
-    const ws = wb.addWorksheet('Monthly Summary of ITC');
-    ws.addRow(['Monthly Summary of ITC (Final Purchase Register)']);
-    ws.addRow(['FY-ordered Apr to Mar']);
-    ws.addRow([]);
-    const hdr = ws.addRow(['Month','Invoice Count','Taxable Value (TV)','IGST','CGST','SGST','Invoice Value (IV)']);
-    styleHeader(ws, hdr.number);
-
-    const monthNames = {4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec',1:'Jan',2:'Feb',3:'Mar'};
-    const monthly = {};
-    const fyStartCounts = {};
-    STATE.prLines.forEach(p=>{
-      if(!p.date) return;
-      const [y,m] = p.date.split('-').map(Number);
-      const fyStartYear = m>=4 ? y : y-1;
-      fyStartCounts[fyStartYear] = (fyStartCounts[fyStartYear]||0)+1;
-      const key = `${y}-${m}`;
-      if(!monthly[key]) monthly[key] = {count:0,TV:0,I:0,C:0,S:0};
-      monthly[key].count++; monthly[key].TV+=p.TV; monthly[key].I+=p.I; monthly[key].C+=p.C; monthly[key].S+=p.S;
-    });
-    // Use the FY that the MAJORITY of rows fall in — a single outlier-dated row
-    // must not be allowed to drag the whole 12-month window to the wrong year.
-    let fyStart = null, bestCount = -1;
-    Object.keys(fyStartCounts).forEach(y=>{
-      if(fyStartCounts[y] > bestCount){ bestCount = fyStartCounts[y]; fyStart = +y; }
-    });
-    if(fyStart===null) fyStart = new Date().getFullYear();
-    const fyMonths = [];
-    for(let i=0;i<12;i++){
-      const m = ((3+i)%12)+1; // 4,5,...,12,1,2,3
-      const y = m>=4 ? fyStart : fyStart+1;
-      fyMonths.push([y,m]);
-    }
-    fyMonths.forEach(([y,m])=>{
-      const stats = monthly[`${y}-${m}`] || {count:0,TV:0,I:0,C:0,S:0};
-      const iv = round2(stats.TV+stats.I+stats.C+stats.S);
-      const row = ws.addRow([`${monthNames[m]}-${String(y).slice(2)}`, stats.count, round2(stats.TV), round2(stats.I), round2(stats.C), round2(stats.S), iv]);
-      [3,4,5,6,7].forEach(c=>row.getCell(c).numFmt=moneyFmt);
-    });
-    const totalRow = ws.addRow(['Grand Total',
-      `=SUM(B5:B${ws.lastRow.number})`, `=SUM(C5:C${ws.lastRow.number})`, `=SUM(D5:D${ws.lastRow.number})`,
-      `=SUM(E5:E${ws.lastRow.number})`, `=SUM(F5:F${ws.lastRow.number})`, `=SUM(G5:G${ws.lastRow.number})`]);
-    totalRow.eachCell(cell=>{ cell.font={bold:true}; });
-    [3,4,5,6,7].forEach(c=>totalRow.getCell(c).numFmt=moneyFmt);
-
-    const inWindowYears = new Set(fyMonths.map(([y])=>y));
-    const outlierRows = STATE.prLines.filter(p=>{
-      if(!p.date) return false;
-      const [y,m] = p.date.split('-').map(Number);
-      return !inWindowYears.has(m>=4 ? y : y-1);
-    });
-    if(outlierRows.length>0){
-      const outTV = round2(outlierRows.reduce((s,r)=>s+r.TV+r.I+r.C+r.S,0));
-      const noteRow = ws.addRow([`Note: ${outlierRows.length} row(s) dated outside this FY window (TV+Tax ₹${outTV.toLocaleString('en-IN')}) are excluded from this table — check dates on those rows in Purchase Register (Final).`]);
-      noteRow.getCell(1).font = {italic:true, color:{argb:'FFC00000'}};
-    }
-    ws.columns = [{width:12},{width:14},{width:16},{width:14},{width:14},{width:14},{width:16}];
   }
 
   // Sheet: Category Summary (ITC, Import ITC, Reversal, RCM, Cash Payment, Offset)
@@ -1038,51 +1228,9 @@ document.getElementById('btnDownload').addEventListener('click', async function(
   addRegisterSheet('Offset Log (Audit)','Offset — Ignored','Month-end GST set-off/closing entries excluded', STATE.buckets['Offset - Ignore']);
 
   // Reconciliation results
-  function addMatchPairSheet(name, title, subtitle, pairs){
-    const ws = wb.addWorksheet(name);
-    ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
-    const hdr = ws.addRow(['Date','Party (PR)','GSTIN','PR Inv No.','2B Inv No.','PR TV','2B TV','PR Tax','2B Tax','Tax Diff','Match Pass']);
-    styleHeader(ws, hdr.number);
-    pairs.forEach(m=>{
-      const row = ws.addRow(['', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.tb.inv_raw, m.pr.TV, m.tb.TV, m.pr.TAX, m.tb.TAX, round2(m.pr.TAX-m.tb.TAX), m.pass]);
-      addDateCell(row,1,m.pr.date);
-      [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
-    });
-    ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:20}];
-  }
-  function addSoloSheet(name, title, subtitle, rows){
-    const ws = wb.addWorksheet(name);
-    ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
-    const hdr = ws.addRow(['Date','Party','GSTIN','Invoice No.','TV','I','C','S','TAX']);
-    styleHeader(ws, hdr.number);
-    rows.forEach(r=>{
-      const row = ws.addRow(['', r.party, r.gstin, r.inv_raw, r.TV, r.I, r.C, r.S, r.TAX]);
-      addDateCell(row,1,r.date);
-      [5,6,7,8,9].forEach(c=>row.getCell(c).numFmt=moneyFmt);
-    });
-    ws.columns = [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12}];
-  }
   addMatchPairSheet('Matched Detail','Matched — PR = GSTR-2B', `${STATE.match.matched.length} invoices matched`, STATE.match.matched);
-  addSoloSheet('ITC at Risk (PR Only)','ITC at Risk','In PR, not in 2B (post RCM cross-match)', STATE.match.prOnlyFinal);
-  addSoloSheet('Unclaimed ITC (2B Only)','Unclaimed ITC','In 2B, not in PR', STATE.match.tbOnly);
   addMatchPairSheet('RCM Recovered','RCM Cross-Match Recovered','PR-only rows that matched 2B RCM section', STATE.match.rcmMatched);
   addSoloSheet('RCM Not Booked in PR','RCM — filed, not booked','Genuine compliance gap', STATE.match.rcm2bUnmatched);
-
-  // GSTIN Summary
-  {
-    const ws = wb.addWorksheet('GSTIN Summary (Unmatched)');
-    ws.addRow(['GSTIN-wise Summary — Unmatched Remainder Only']);
-    ws.addRow(['ITC at Risk + Unclaimed ITC — Matched excluded']);
-    ws.addRow([]);
-    const hdr = ws.addRow(['GSTIN','Party Name','PR Count','PR TV','PR Tax','2B Count','2B TV','2B Tax','Tax Diff','Status']);
-    styleHeader(ws, hdr.number);
-    STATE.gstinSummary.forEach(s=>{
-      const status = Math.abs(s.diff_tax)<=10 ? 'Nets to ~0' : 'Genuine gap';
-      const row = ws.addRow([s.gstin, s.name, s.pr_count, s.pr_tv, s.pr_tax, s.tb_count, s.tb_tv, s.tb_tax, s.diff_tax, status]);
-      [4,5,7,8,9].forEach(c=>row.getCell(c).numFmt=moneyFmt);
-    });
-    ws.columns = [{width:17},{width:28},{width:10},{width:14},{width:13},{width:10},{width:14},{width:13},{width:13},{width:14}];
-  }
 
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
