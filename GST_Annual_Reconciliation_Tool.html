@@ -619,6 +619,27 @@ function buildGrid(){
   });
   h += `</tbody></table></div></div>`;
 
+  // -------- Input (ITC): As per Return (3B, Net) vs As per GSTR-2B --------
+  h += `<div class="card"><h2>Input (ITC) — As per Return (3B, Net) vs As per GSTR-2B (editable)</h2>
+  <div class="tablewrap"><table><thead>
+  <tr><th class="lbl" rowspan="2"></th>
+  <th colspan="3" class="hd-return">As per Return (3B, Net)</th><th colspan="3" class="hd-books">As per GSTR-2B</th></tr>
+  <tr><th class="hd-return">IGST</th><th class="hd-return">CGST</th><th class="hd-return">SGST</th>
+  <th class="hd-books">IGST</th><th class="hd-books">CGST</th><th class="hd-books">SGST</th></tr>
+  </thead><tbody>`;
+  MONTHS.forEach(m=>{
+    const g = inward.gross[m]||{igst:0,cgst:0,sgst:0};
+    const rv = inward.reversed[m]||{rule:{igst:0,cgst:0,sgst:0},others:{igst:0,cgst:0,sgst:0}};
+    const netI = g.igst-rv.rule.igst-rv.others.igst, netC = g.cgst-rv.rule.cgst-rv.others.cgst, netS = g.sgst-rv.rule.sgst-rv.others.sgst;
+    const ig2b = prGstr2b[m]||{igst:0,cgst:0,sgst:0};
+    h += `<tr><td class="lbl">${m}</td>
+      <td class="d-return">${netI.toFixed(2)}</td><td class="d-return">${netC.toFixed(2)}</td><td class="d-return">${netS.toFixed(2)}</td>
+      <td>${cellInput(`ig2b_${m}_i`,ig2b.igst)}</td><td>${cellInput(`ig2b_${m}_c`,ig2b.cgst)}</td><td>${cellInput(`ig2b_${m}_s`,ig2b.sgst)}</td>
+      </tr>`;
+  });
+  h += `</tbody></table></div>
+  <div class="hint">"As per Return (3B, Net)" reflects the Input (ITC) table above (edit there — it updates here on the next Build/Generate). "As per GSTR-2B" is auto-filled from the GSTR-2B tool's Monthly Summary of ITC when uploaded above.</div></div>`;
+
   el.innerHTML = h;
   // live-update Net columns when Gross/Reversal inputs change
   el.querySelectorAll("input.cell").forEach(inp=>{
@@ -655,17 +676,20 @@ function computeAll(){
   const outTotals={tv:0,igst:0,cgst:0,sgst:0}, outDataTotals={tv:0,igst:0,cgst:0,sgst:0};
   const rcmTotals={tv:0,igst:0,cgst:0,sgst:0}, rcmDataTotals={tv:0,igst:0,cgst:0,sgst:0};
   const netReturnTotals={igst:0,cgst:0,sgst:0}, netBooksTotals={igst:0,cgst:0,sgst:0};
+  const gstr1Totals={tv:0,igst:0,cgst:0,sgst:0}, gstr2bTotals={igst:0,cgst:0,sgst:0};
   MONTHS.forEach(m=>{
     ["tv","i","c","s"].forEach((suf,idx)=>{
       const key=["tv","igst","cgst","sgst"][idx];
       outTotals[key]+=readVal(`o_${m}_${suf}`); outDataTotals[key]+=readVal(`od_${m}_${suf}`);
       rcmTotals[key]+=readVal(`r_${m}_${suf}`); rcmDataTotals[key]+=readVal(`rd_${m}_${suf}`);
+      gstr1Totals[key]+=readVal(`og_${m}_${suf}`);
     });
     ["i","c","s"].forEach((suf,idx)=>{
       const key=["igst","cgst","sgst"][idx];
       const g=readVal(`g_${m}_${suf}`), rr=readVal(`rr_${m}_${suf}`), ro=readVal(`ro_${m}_${suf}`);
       netReturnTotals[key]+= g-rr-ro;
       netBooksTotals[key]+=readVal(`ib_${m}_${suf}`);
+      gstr2bTotals[key]+=readVal(`ig2b_${m}_${suf}`);
     });
   });
 
@@ -704,6 +728,7 @@ function computeAll(){
   }
 
   return {outTotals,outDataTotals,rcmTotals,rcmDataTotals,netReturnTotals,netBooksTotals,netBooksAdj,totalAdj,
+    gstr1Totals, gstr2bTotals,
     manual, outputTotal, inputTotal, gstPayable, payableTotal, closingComputed, closingComputed31Mar, diffVsClosing,
     outputDiff, inputDiff, portalBalance, revisedPortalBalance, netDiffToSearch};
 }
@@ -864,6 +889,27 @@ async function downloadExcel(c){
   for(let cc=2;cc<=13;cc++){ const col=String.fromCharCode(64+cc); wsO.getCell(r,cc).value={formula:`SUM(${col}${first}:${col}${last})`}; tot(wsO.getCell(r,cc)); wsO.getCell(r,cc).numFmt=numFmt; }
   tot(wsO.getCell(r,1));
   const outTotalRow=r;
+  r+=3;
+  wsO.getCell(r,1).value="As per Return (3B) vs As per GSTR-1"; wsO.getCell(r,1).font={bold:true,size:12}; r++;
+  const gr1b=r;
+  wsO.mergeCells(gr1b,2,gr1b,5); hdr(wsO.getCell(gr1b,2),"As per Return (3B)",BL);
+  wsO.mergeCells(gr1b,6,gr1b,9); hdr(wsO.getCell(gr1b,6),"As per GSTR-1",OL);
+  wsO.mergeCells(gr1b,10,gr1b,13); hdr(wsO.getCell(gr1b,10),"Difference",TR);
+  const hr1b=gr1b+1;
+  ["Month","TV","IGST","CGST","SGST","TV","IGST","CGST","SGST","TV","IGST","CGST","SGST"].forEach((h,i)=>hdr(wsO.getCell(hr1b,i+1),h, i===0?CH:(i<=4?BL:(i<=8?OL:TR))));
+  r=hr1b+1; const first1b=r;
+  MONTHS.forEach(m=>{
+    wsO.getCell(r,1).value=m;
+    wsO.getCell(r,2).value=readVal(`o_${m}_tv`); wsO.getCell(r,3).value=readVal(`o_${m}_i`); wsO.getCell(r,4).value=readVal(`o_${m}_c`); wsO.getCell(r,5).value=readVal(`o_${m}_s`);
+    wsO.getCell(r,6).value=readVal(`og_${m}_tv`); wsO.getCell(r,7).value=readVal(`og_${m}_i`); wsO.getCell(r,8).value=readVal(`og_${m}_c`); wsO.getCell(r,9).value=readVal(`og_${m}_s`);
+    for(let cc=1;cc<=4;cc++){ wsO.getCell(r,9+cc).value={formula:`${String.fromCharCode(65+cc)}${r}-${String.fromCharCode(69+cc)}${r}`}; }
+    for(let cc=2;cc<=13;cc++) wsO.getCell(r,cc).numFmt=numFmt;
+    r++;
+  });
+  const last1b=r-1;
+  wsO.getCell(r,1).value="Total";
+  for(let cc=2;cc<=13;cc++){ const col=String.fromCharCode(64+cc); wsO.getCell(r,cc).value={formula:`SUM(${col}${first1b}:${col}${last1b})`}; tot(wsO.getCell(r,cc)); wsO.getCell(r,cc).numFmt=numFmt; }
+  tot(wsO.getCell(r,1));
   wsO.columns.forEach(col=>col.width=13); wsO.getColumn(1).width=12;
 
   // ---------------- RCM ----------------
@@ -959,6 +1005,28 @@ async function downloadExcel(c){
   wsI.getCell(r,2).value={formula:`E${inTotalRow}-B${adjTotalRow}`}; wsI.getCell(r,3).value={formula:`F${inTotalRow}-C${adjTotalRow}`}; wsI.getCell(r,4).value={formula:`G${inTotalRow}-D${adjTotalRow}`};
   for(let cc=1;cc<=4;cc++){ tot(wsI.getCell(r,cc)); wsI.getCell(r,cc).numFmt=numFmt; }
   const adjustedNetRow=r;
+  r+=3;
+  wsI.getCell(r,1).value="As per Return (3B, Net) vs As per GSTR-2B"; wsI.getCell(r,1).font={bold:true,size:12}; r++;
+  const gr3=r;
+  wsI.mergeCells(gr3,2,gr3,4); hdr(wsI.getCell(gr3,2),"As per Return (3B, Net)",BL);
+  wsI.mergeCells(gr3,5,gr3,7); hdr(wsI.getCell(gr3,5),"As per GSTR-2B",OL);
+  wsI.mergeCells(gr3,8,gr3,10); hdr(wsI.getCell(gr3,8),"Difference",TR);
+  const hr3=gr3+1;
+  ["Month","IGST","CGST","SGST","IGST","CGST","SGST","IGST","CGST","SGST"].forEach((h,i)=>hdr(wsI.getCell(hr3,i+1),h, i===0?CH:(i<=3?BL:(i<=6?OL:TR))));
+  r=hr3+1; const g2bfirst=r;
+  MONTHS.forEach((m,idx)=>{
+    const drow=dfirst+idx;
+    wsI.getCell(r,1).value=m;
+    wsI.getCell(r,2).value={formula:`K${drow}`}; wsI.getCell(r,3).value={formula:`L${drow}`}; wsI.getCell(r,4).value={formula:`M${drow}`};
+    wsI.getCell(r,5).value=readVal(`ig2b_${m}_i`); wsI.getCell(r,6).value=readVal(`ig2b_${m}_c`); wsI.getCell(r,7).value=readVal(`ig2b_${m}_s`);
+    wsI.getCell(r,8).value={formula:`B${r}-E${r}`}; wsI.getCell(r,9).value={formula:`C${r}-F${r}`}; wsI.getCell(r,10).value={formula:`D${r}-G${r}`};
+    for(let cc=2;cc<=10;cc++) wsI.getCell(r,cc).numFmt=numFmt;
+    r++;
+  });
+  const g2blast=r-1;
+  wsI.getCell(r,1).value="Total";
+  for(let cc=2;cc<=10;cc++){ const col=String.fromCharCode(64+cc); wsI.getCell(r,cc).value={formula:`SUM(${col}${g2bfirst}:${col}${g2blast})`}; tot(wsI.getCell(r,cc)); wsI.getCell(r,cc).numFmt=numFmt; }
+  tot(wsI.getCell(r,1));
   wsI.columns.forEach(col=>col.width=13); wsI.getColumn(1).width=42;
 
   // ---------------- Payment Summary ----------------
