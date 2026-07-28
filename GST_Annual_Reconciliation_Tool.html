@@ -412,6 +412,9 @@ function parseCreditReversal(wb){
 }
 
 // ---------- Books-side: dedicated known formats, generic fallback ----------
+// Column layout (0-based, from XLSX.utils.sheet_to_json header:1) of the GSTR-1 tool's
+// "Monthly Summary" sheet and the GSTR-2B tool's "Monthly Summary of ITC" sheet:
+// 0=Month, 1-5=Books block (TV,IGST,CGST,SGST,InvoiceValue), 6-10=GSTR-1/2B block (same 5 cols).
 function parseSRMonthlySummary(wb){
   const ws = wb.Sheets["Monthly Summary"]; if(!ws) return null;
   const rows = sheetRows(ws);
@@ -421,13 +424,14 @@ function parseSRMonthlySummary(wb){
     if(String(row[0]||"").toLowerCase()==="month") { hdr=i; break; }
   }
   if(hdr<0) return null;
-  const data={};
+  const data={}, gstr1={};
   for(let i=hdr+1;i<rows.length;i++){
     const row=rows[i]; if(!row) continue;
     const m=monthFromLabel(row[0]); if(!m) continue;
     data[m]={tv:num(row[1]),igst:num(row[2]),cgst:num(row[3]),sgst:num(row[4])};
+    gstr1[m]={tv:num(row[6]),igst:num(row[7]),cgst:num(row[8]),sgst:num(row[9])};
   }
-  return Object.keys(data).length? data : null;
+  return Object.keys(data).length? {books:data, gstr1} : null;
 }
 function parseITCMonthlySummary(wb){
   const ws = wb.Sheets["Monthly Summary of ITC"]; if(!ws) return null;
@@ -438,13 +442,14 @@ function parseITCMonthlySummary(wb){
     if(String(row[0]||"").toLowerCase()==="month") { hdr=i; break; }
   }
   if(hdr<0) return null;
-  const data={};
+  const data={}, gstr2b={};
   for(let i=hdr+1;i<rows.length;i++){
     const row=rows[i]; if(!row) continue;
     const m=monthFromLabel(row[0]); if(!m) continue;
-    data[m]={igst:num(row[3]),cgst:num(row[4]),sgst:num(row[5])};
+    data[m]={igst:num(row[2]),cgst:num(row[3]),sgst:num(row[4])};
+    gstr2b[m]={igst:num(row[7]),cgst:num(row[8]),sgst:num(row[9])};
   }
-  return Object.keys(data).length? data : null;
+  return Object.keys(data).length? {books:data, gstr2b} : null;
 }
 function parseGenericMonthly(wb, kind){
   let best=null;
@@ -512,11 +517,12 @@ document.getElementById("fileSR").addEventListener("change", async e=>{
   try{
     const wb = await readWorkbook(f);
     let d = parseSRMonthlySummary(wb);
-    if(!d) d = parseGenericMonthly(wb,"output");
+    let gotGstr1 = !!d;
+    if(!d){ const generic = parseGenericMonthly(wb,"output"); d = generic? {books:generic, gstr1:{}} : null; }
     if(!d){ setStat("statSR", false, "Layout not recognised — grid stays editable"); return; }
     state.srData = d;
     updateMetaFromFile(f);
-    setStat("statSR", true, `Loaded — ${Object.keys(d).length} months mapped`);
+    setStat("statSR", true, `Loaded — ${Object.keys(d.books).length} months mapped${gotGstr1?" (incl. GSTR-1 for 3B-vs-GSTR-1 check)":""}`);
   }catch(err){ setStat("statSR", false, "Error: "+err.message); }
 });
 document.getElementById("filePR").addEventListener("change", async e=>{
@@ -524,11 +530,12 @@ document.getElementById("filePR").addEventListener("change", async e=>{
   try{
     const wb = await readWorkbook(f);
     let d = parseITCMonthlySummary(wb);
-    if(!d) d = parseGenericMonthly(wb,"input");
+    let gotGstr2b = !!d;
+    if(!d){ const generic = parseGenericMonthly(wb,"input"); d = generic? {books:generic, gstr2b:{}} : null; }
     if(!d){ setStat("statPR", false, "Layout not recognised — grid stays editable"); return; }
     state.prData = d;
     updateMetaFromFile(f);
-    setStat("statPR", true, `Loaded — ${Object.keys(d).length} months mapped`);
+    setStat("statPR", true, `Loaded — ${Object.keys(d.books).length} months mapped${gotGstr2b?" (incl. GSTR-2B for 3B-vs-GSTR-2B check)":""}`);
   }catch(err){ setStat("statPR", false, "Error: "+err.message); }
 });
 
@@ -537,7 +544,8 @@ function cellInput(id,val){ return `<input class="cell" type="number" step="0.01
 function buildGrid(){
   if(!state.yearly || !state.ledger){ alert("Please upload both required files first."); return; }
   const {outward, inward} = state.yearly;
-  const sr = state.srData||{}, pr = state.prData||{};
+  const sr = (state.srData&&state.srData.books)||{}, pr = (state.prData&&state.prData.books)||{};
+  const srGstr1 = (state.srData&&state.srData.gstr1)||{}, prGstr2b = (state.prData&&state.prData.gstr2b)||{};
   const el = document.getElementById("tables");
   el.innerHTML = "";
 
@@ -564,6 +572,25 @@ function buildGrid(){
   });
   h += `</tbody></table></div>
   <div class="hint">RCM "As per Books" defaults to mirror the Return column — no dedicated RCM books reconciliation is built yet, so edit these cells directly once you have the real figures.</div></div>`;
+
+  // -------- Output: As per Return (3B) vs As per GSTR-1 --------
+  h += `<div class="card"><h2>Output — As per Return (3B) vs As per GSTR-1 (editable)</h2>
+  <div class="tablewrap"><table><thead>
+  <tr><th class="lbl" rowspan="2"></th>
+  <th colspan="4" class="hd-return">As per Return (3B)</th><th colspan="4" class="hd-books">As per GSTR-1</th></tr>
+  <tr><th class="hd-return">TV</th><th class="hd-return">IGST</th><th class="hd-return">CGST</th><th class="hd-return">SGST</th>
+  <th class="hd-books">TV</th><th class="hd-books">IGST</th><th class="hd-books">CGST</th><th class="hd-books">SGST</th></tr>
+  </thead><tbody>`;
+  MONTHS.forEach(m=>{
+    const o = outward.out[m];
+    const og = srGstr1[m]||{tv:0,igst:0,cgst:0,sgst:0};
+    h += `<tr><td class="lbl">${m}</td>
+      <td class="d-return">${o.tv.toFixed(2)}</td><td class="d-return">${o.igst.toFixed(2)}</td><td class="d-return">${o.cgst.toFixed(2)}</td><td class="d-return">${o.sgst.toFixed(2)}</td>
+      <td>${cellInput(`og_${m}_tv`,og.tv)}</td><td>${cellInput(`og_${m}_i`,og.igst)}</td><td>${cellInput(`og_${m}_c`,og.cgst)}</td><td>${cellInput(`og_${m}_s`,og.sgst)}</td>
+      </tr>`;
+  });
+  h += `</tbody></table></div>
+  <div class="hint">"As per Return (3B)" reflects the Output &amp; RCM table above (edit there — it updates here on the next Build/Generate). "As per GSTR-1" is auto-filled from the GSTR-1 tool's Monthly Summary (incl. B2CS) when uploaded above.</div></div>`;
 
   // -------- Input (ITC) grid: derivation + Return vs Books --------
   h += `<div class="card"><h2>Input (ITC) — Net (Excl. RCM), Return vs Books (editable)</h2>
@@ -664,11 +691,14 @@ function computeAll(){
   // balance (Return-basis, as reported on the portal), adjust for the already-identified
   // Return-vs-Books gaps on Output and Input so it's comparable to our own Books-basis
   // working, then see what's left over to investigate.
+  // ledgerClosingTotal() returns the ledger's own balance sign (positive = credit available).
+  // Every other row on this sheet follows "positive = Payable, negative = Credit", so it's
+  // negated here to match before it's combined with anything else on the sheet.
   const outputDiff = (outTotals.igst+outTotals.cgst+outTotals.sgst) - (outDataTotals.igst+outDataTotals.cgst+outDataTotals.sgst);
   const inputDiff = (netReturnTotals.igst+netReturnTotals.cgst+netReturnTotals.sgst) - (netBooksTotals.igst+netBooksTotals.cgst+netBooksTotals.sgst);
   let portalBalance=0, revisedPortalBalance=0, netDiffToSearch=0;
   if(state.ledger){
-    portalBalance = ledgerClosingTotal(state.ledger.credit.opening, state.ledger.credit.monthly, "accrued","utilised");
+    portalBalance = -ledgerClosingTotal(state.ledger.credit.opening, state.ledger.credit.monthly, "accrued","utilised");
     revisedPortalBalance = portalBalance - outputDiff + inputDiff;
     netDiffToSearch = revisedPortalBalance - closingComputed31Mar;
   }
@@ -1066,7 +1096,7 @@ async function downloadExcel(c){
 
   wsS.getCell(r,1).value="Portal Reconciliation Bridge"; wsS.getCell(r,1).font={bold:true}; r++;
   wsS.getCell(r,1).value="Balance as per Portal (Electronic Credit Ledger)";
-  wsS.getCell(r,5).value={formula:`'Credit Ledger'!H${creditLedgerInfo.totalRow}+'Credit Ledger'!I${creditLedgerInfo.totalRow}+'Credit Ledger'!J${creditLedgerInfo.totalRow}`};
+  wsS.getCell(r,5).value={formula:`-('Credit Ledger'!H${creditLedgerInfo.totalRow}+'Credit Ledger'!I${creditLedgerInfo.totalRow}+'Credit Ledger'!J${creditLedgerInfo.totalRow})`};
   const portalBalRow=r; r++;
   wsS.getCell(r,1).value="Less: Output Difference (Return − Books, already identified)";
   wsS.getCell(r,5).value={formula:`-(Output!K${outTotalRow}+Output!L${outTotalRow}+Output!M${outTotalRow})`};
