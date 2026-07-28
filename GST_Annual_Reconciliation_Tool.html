@@ -349,6 +349,10 @@ function parseCash(wb){
   const fpOpening = {igst:0,cgst:0,sgst:0};
   const fpMonthly = {}; MONTHS.forEach(m=> fpMonthly[m]={cr:{igst:0,cgst:0,sgst:0}, dr:{igst:0,cgst:0,sgst:0}, closing:null});
   let fpLastBefore=[0,0,0];
+  // Payments dated after 31-March but against a return period within this FY (e.g. March
+  // liability paid in April) fall outside the FY date window and would otherwise be silently
+  // dropped — capture them separately so they're still visible somewhere in the workbook.
+  const paidAfterFYEnd = {cr:{igst:0,cgst:0,sgst:0}, dr:{igst:0,cgst:0,sgst:0}};
 
   for(let i=0;i<rows.length;i++){
     const row=rows[i]; if(!row) continue;
@@ -359,7 +363,16 @@ function parseCash(wb){
       fpLastBefore = [v[14]+v[22]+v[30]+v[38], v[15]+v[23]+v[31]+v[39], v[16]+v[24]+v[32]+v[40]];
       continue;
     }
-    if(d > fyEnd) continue;
+    if(d > fyEnd){
+      const period = String(row[3]||"").trim();
+      if(FY_PERIODS[period]){
+        const crdr2 = String(row[5]||"").trim();
+        const tax2 = {igst:v[6],cgst:v[7],sgst:v[8]};
+        const bucket = crdr2==="Cr" ? paidAfterFYEnd.cr : paidAfterFYEnd.dr;
+        bucket.igst+=tax2.igst; bucket.cgst+=tax2.cgst; bucket.sgst+=tax2.sgst;
+      }
+      continue;
+    }
     const m = monthLookup[d.getMonth()+1];
     const crdr = String(row[5]||"").trim();
     const tax = {igst:v[6],cgst:v[7],sgst:v[8]};
@@ -383,7 +396,7 @@ function parseCash(wb){
   let lastF = fpOpening;
   MONTHS.forEach(m=>{ if(fpMonthly[m].closing===null) fpMonthly[m].closing=lastF; else lastF=fpMonthly[m].closing; });
 
-  return {cashOpening, cashMonthly, fpOpening, fpMonthly};
+  return {cashOpening, cashMonthly, fpOpening, fpMonthly, paidAfterFYEnd};
 }
 
 // ---------- CREDITREVERSAL tab: closing balance reference ----------
@@ -646,7 +659,6 @@ function computeAll(){
   const closingComputed = manual.opening + payableTotal - manual.payment + manual.reversal;
   const closingComputed31Mar = closingComputed + manual.payAfterMar;
   const diffVsClosing = closingComputed - manual.closing;
-  const diff31Mar = closingComputed31Mar - manual.closing;
 
   // Portal reconciliation bridge: start from the actual Electronic Credit Ledger closing
   // balance (Return-basis, as reported on the portal), adjust for the already-identified
@@ -657,12 +669,12 @@ function computeAll(){
   let portalBalance=0, revisedPortalBalance=0, netDiffToSearch=0;
   if(state.ledger){
     portalBalance = ledgerClosingTotal(state.ledger.credit.opening, state.ledger.credit.monthly, "accrued","utilised");
-    revisedPortalBalance = portalBalance + outputDiff - inputDiff;
-    netDiffToSearch = revisedPortalBalance + closingComputed31Mar;
+    revisedPortalBalance = portalBalance - outputDiff + inputDiff;
+    netDiffToSearch = revisedPortalBalance - closingComputed31Mar;
   }
 
   return {outTotals,outDataTotals,rcmTotals,rcmDataTotals,netReturnTotals,netBooksTotals,netBooksAdj,totalAdj,
-    manual, outputTotal, inputTotal, gstPayable, payableTotal, closingComputed, closingComputed31Mar, diffVsClosing, diff31Mar,
+    manual, outputTotal, inputTotal, gstPayable, payableTotal, closingComputed, closingComputed31Mar, diffVsClosing,
     outputDiff, inputDiff, portalBalance, revisedPortalBalance, netDiffToSearch};
 }
 
@@ -699,12 +711,11 @@ function renderSummary(){
   <tr class="total"><td class="lbl">Closing Balance — Computed (as on 31-March)</td><td colspan="3">${fmt(c.closingComputed31Mar)}</td></tr>
   <tr><td class="lbl">Closing Balance as per Books/Portal</td><td colspan="3">${fmt(c.manual.closing)}</td></tr>
   <tr><td class="lbl">Diff — Computed (full year) vs Books/Portal</td><td colspan="3" class="diffcell">${fmt(c.diffVsClosing)}</td></tr>
-  <tr><td class="lbl">Diff — Computed (31-March) vs Books/Portal</td><td colspan="3" class="diffcell">${fmt(c.diff31Mar)}</td></tr>
   ${state.ledger ? `
   <tr><td class="lbl" colspan="4" style="padding-top:10px;font-weight:700;">Portal Reconciliation Bridge</td></tr>
   <tr><td class="lbl">Balance as per Portal (Electronic Credit Ledger)</td><td colspan="3">${fmt(c.portalBalance)}</td></tr>
-  <tr><td class="lbl">Add/(Less): Output Difference (Return − Books, already identified)</td><td colspan="3">${fmt(c.outputDiff)}</td></tr>
-  <tr><td class="lbl">Add/(Less): Input Difference (Return − Books, already identified)</td><td colspan="3">${fmt(-c.inputDiff)}</td></tr>
+  <tr><td class="lbl">Less: Output Difference (Return − Books, already identified)</td><td colspan="3">${fmt(-c.outputDiff)}</td></tr>
+  <tr><td class="lbl">Add: Input Difference (Return − Books, already identified)</td><td colspan="3">${fmt(c.inputDiff)}</td></tr>
   <tr class="total"><td class="lbl">Revised Portal Balance</td><td colspan="3">${fmt(c.revisedPortalBalance)}</td></tr>
   <tr><td class="lbl">Balance as per Our Working (Closing Balance — Computed, 31-March)</td><td colspan="3">${fmt(c.closingComputed31Mar)}</td></tr>
   <tr class="total"><td class="lbl">Net Difference to Search For</td><td colspan="3" class="diffcell">${fmt(c.netDiffToSearch)}</td></tr>
@@ -722,7 +733,7 @@ function renderSummary(){
   // Credit / Cash / Fees ledger tables
   if(state.ledger){
     d.appendChild(renderLedgerCard("Electronic Credit Ledger — Monthly Summary", state.ledger.credit.opening, state.ledger.credit.monthly, "accrued","utilised","ITC Accrued (Cr)","ITC Utilised (Dr)"));
-    d.appendChild(renderLedgerCard("Electronic Cash Ledger — Monthly Summary", state.ledger.cash.cashOpening, state.ledger.cash.cashMonthly, "cr","dr","Cash Deposited (Cr)","Cash Utilised (Dr)"));
+    d.appendChild(renderLedgerCard("Electronic Cash Ledger — Monthly Summary", state.ledger.cash.cashOpening, state.ledger.cash.cashMonthly, "cr","dr","Cash Deposited (Cr)","Cash Utilised (Dr)", state.ledger.cash.paidAfterFYEnd));
     d.appendChild(renderLedgerCard("Fees, Interest, Penalty & Others — Monthly Summary", state.ledger.cash.fpOpening, state.ledger.cash.fpMonthly, "cr","dr","Deposited (Cr)","Utilised (Dr)"));
   }
   if(state.yearly && state.yearly.payment) d.appendChild(renderPaymentSummary());
@@ -730,7 +741,7 @@ function renderSummary(){
   document.getElementById("btnDownload").addEventListener("click", ()=>downloadExcel(c));
 }
 
-function renderLedgerCard(title, opening, monthly, inKey, outKey, inLabel, outLabel){
+function renderLedgerCard(title, opening, monthly, inKey, outKey, inLabel, outLabel, paidAfterFYEnd){
   const card = document.createElement("div"); card.className="card";
   let h = `<div class="section-title">${title}</div><table><thead>
   <tr><th class="lbl hd-neutral"></th><th colspan="3" class="hd-return">${inLabel}</th><th colspan="3" class="hd-diff">${outLabel}</th><th colspan="3" class="hd-books">Closing Balance</th></tr>
@@ -748,6 +759,12 @@ function renderLedgerCard(title, opening, monthly, inKey, outKey, inLabel, outLa
       <td class="d-books">${fmt(running.igst)}</td><td class="d-books">${fmt(running.cgst)}</td><td class="d-books">${fmt(running.sgst)}</td></tr>`;
   });
   h += `</tbody></table>`;
+  if(paidAfterFYEnd && (paidAfterFYEnd.cr.igst||paidAfterFYEnd.cr.cgst||paidAfterFYEnd.cr.sgst||paidAfterFYEnd.dr.igst||paidAfterFYEnd.dr.cgst||paidAfterFYEnd.dr.sgst)){
+    h += `<div class="hint">Not included above (outside the FY date window, excluded from the closing balance) — deposits/payments dated after 31-March but against a return period within this FY (e.g. March liability paid in April):
+    Deposited (Cr) — IGST ${fmt(paidAfterFYEnd.cr.igst)}, CGST ${fmt(paidAfterFYEnd.cr.cgst)}, SGST ${fmt(paidAfterFYEnd.cr.sgst)};
+    Paid (Dr) — IGST ${fmt(paidAfterFYEnd.dr.igst)}, CGST ${fmt(paidAfterFYEnd.dr.cgst)}, SGST ${fmt(paidAfterFYEnd.dr.sgst)}.
+    Cross-check against "Payment made after 31-March" in the Summary sheet.</div>`;
+  }
   card.innerHTML = h;
   return card;
 }
@@ -944,7 +961,7 @@ async function downloadExcel(c){
   wsP.columns.forEach(col=>col.width=13); wsP.getColumn(1).width=12;
 
   // ---------------- Ledger sheets (Credit / Cash / Fees) ----------------
-  function ledgerSheet(name, opening, monthly, inKey, outKey, inLabel, outLabel){
+  function ledgerSheet(name, opening, monthly, inKey, outKey, inLabel, outLabel, paidAfterFYEnd){
     const ws = wb.addWorksheet(name);
     titleBlock(ws, name + " — Monthly Summary");
     let gr=5;
@@ -973,12 +990,27 @@ async function downloadExcel(c){
     ws.getCell(r,8).value={formula:`H${last}`}; ws.getCell(r,9).value={formula:`I${last}`}; ws.getCell(r,10).value={formula:`J${last}`};
     for(let cc=8;cc<=10;cc++){ tot(ws.getCell(r,cc)); ws.getCell(r,cc).numFmt=numFmt; }
     tot(ws.getCell(r,1));
+    const totalMovementRow=r; r++;
+    if(paidAfterFYEnd && (paidAfterFYEnd.cr.igst||paidAfterFYEnd.cr.cgst||paidAfterFYEnd.cr.sgst||paidAfterFYEnd.dr.igst||paidAfterFYEnd.dr.cgst||paidAfterFYEnd.dr.sgst)){
+      r++;
+      ws.getCell(r,1).value="Not included above (outside FY date window) — paid after 31-March for a return period within this FY:"; ws.getCell(r,1).font={italic:true,size:9};
+      r++;
+      ws.getCell(r,1).value="Deposited (Cr)";
+      ws.getCell(r,2).value=paidAfterFYEnd.cr.igst; ws.getCell(r,3).value=paidAfterFYEnd.cr.cgst; ws.getCell(r,4).value=paidAfterFYEnd.cr.sgst;
+      for(let cc=2;cc<=4;cc++) ws.getCell(r,cc).numFmt=numFmt;
+      r++;
+      ws.getCell(r,1).value="Paid (Dr)";
+      ws.getCell(r,5).value=paidAfterFYEnd.dr.igst; ws.getCell(r,6).value=paidAfterFYEnd.dr.cgst; ws.getCell(r,7).value=paidAfterFYEnd.dr.sgst;
+      for(let cc=5;cc<=7;cc++) ws.getCell(r,cc).numFmt=numFmt;
+      r++;
+      ws.getCell(r,1).value="Cross-check against \"Payment made after 31-March\" in the Summary sheet."; ws.getCell(r,1).font={italic:true,size:9};
+    }
     ws.columns.forEach(col=>col.width=13); ws.getColumn(1).width=24;
-    return {sheet:ws, totalRow:r};
+    return {sheet:ws, totalRow:totalMovementRow};
   }
   const led = state.ledger;
   const creditLedgerInfo = ledgerSheet("Credit Ledger", led.credit.opening, led.credit.monthly, "accrued","utilised","ITC Accrued (Cr)","ITC Utilised (Dr)");
-  ledgerSheet("Cash Ledger", led.cash.cashOpening, led.cash.cashMonthly, "cr","dr","Cash Deposited (Cr)","Cash Utilised (Dr)");
+  ledgerSheet("Cash Ledger", led.cash.cashOpening, led.cash.cashMonthly, "cr","dr","Cash Deposited (Cr)","Cash Utilised (Dr)", led.cash.paidAfterFYEnd);
   ledgerSheet("Fees Int Penalty Others", led.cash.fpOpening, led.cash.fpMonthly, "cr","dr","Deposited (Cr)","Utilised (Dr)");
 
   // ---------------- Summary (cross-sheet formulas) — worksheet was created first above; fill it now ----------------
@@ -1030,19 +1062,17 @@ async function downloadExcel(c){
   const close31Row=r; r++;
   wsS.getCell(r,1).value="Closing Balance as per Books/Portal"; wsS.getCell(r,5).value=c.manual.closing; const closeActualRow=r; r++;
   wsS.getCell(r,1).value="Diff — Computed (full year) vs Books/Portal";
-  wsS.getCell(r,5).value={formula:`E${closeCompRow}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5)); r++;
-  wsS.getCell(r,1).value="Diff — Computed (31-March) vs Books/Portal";
-  wsS.getCell(r,5).value={formula:`E${close31Row}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5)); r+=2;
+  wsS.getCell(r,5).value={formula:`E${closeCompRow}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5)); r+=2;
 
   wsS.getCell(r,1).value="Portal Reconciliation Bridge"; wsS.getCell(r,1).font={bold:true}; r++;
   wsS.getCell(r,1).value="Balance as per Portal (Electronic Credit Ledger)";
   wsS.getCell(r,5).value={formula:`'Credit Ledger'!H${creditLedgerInfo.totalRow}+'Credit Ledger'!I${creditLedgerInfo.totalRow}+'Credit Ledger'!J${creditLedgerInfo.totalRow}`};
   const portalBalRow=r; r++;
-  wsS.getCell(r,1).value="Add/(Less): Output Difference (Return − Books, already identified)";
-  wsS.getCell(r,5).value={formula:`Output!K${outTotalRow}+Output!L${outTotalRow}+Output!M${outTotalRow}`};
+  wsS.getCell(r,1).value="Less: Output Difference (Return − Books, already identified)";
+  wsS.getCell(r,5).value={formula:`-(Output!K${outTotalRow}+Output!L${outTotalRow}+Output!M${outTotalRow})`};
   const outDiffRow=r; r++;
-  wsS.getCell(r,1).value="Add/(Less): Input Difference (Return − Books, already identified)";
-  wsS.getCell(r,5).value={formula:`-('Input (ITC)'!H${inTotalRow}+'Input (ITC)'!I${inTotalRow}+'Input (ITC)'!J${inTotalRow})`};
+  wsS.getCell(r,1).value="Add: Input Difference (Return − Books, already identified)";
+  wsS.getCell(r,5).value={formula:`'Input (ITC)'!H${inTotalRow}+'Input (ITC)'!I${inTotalRow}+'Input (ITC)'!J${inTotalRow}`};
   const inDiffRow=r; r++;
   wsS.getCell(r,1).value="Revised Portal Balance";
   wsS.getCell(r,5).value={formula:`SUM(E${portalBalRow}:E${inDiffRow})`};
@@ -1052,7 +1082,7 @@ async function downloadExcel(c){
   wsS.getCell(r,5).value={formula:`E${close31Row}`};
   const ourWorkingRow=r; r++;
   wsS.getCell(r,1).value="Net Difference to Search For";
-  wsS.getCell(r,5).value={formula:`E${revisedPortalRow}+E${ourWorkingRow}`};
+  wsS.getCell(r,5).value={formula:`E${revisedPortalRow}-E${ourWorkingRow}`};
   tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5));
 
   for(let rr=gr;rr<=r;rr++) for(let cc=1;cc<=5;cc++) wsS.getCell(rr,cc).numFmt=numFmt===wsS.getCell(rr,cc).numFmt?numFmt:numFmt;
