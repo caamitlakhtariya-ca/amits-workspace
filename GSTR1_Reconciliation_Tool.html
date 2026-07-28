@@ -213,8 +213,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <h2 style="color:#555;">How the logic works</h2>
     <div class="instructions-box">
       <b>Dr/Cr:</b> Read from each Tally cell's number format (e.g. <code>"0.00" Dr"</code>), not the value itself — Cr adds to sales/tax, Dr reduces it (discount, round-off, or a Credit Note's natural reversal).<br><br>
-      <b>GSTR-1 tabs covered:</b> b2b, exp (regular outward supply) · cdnr, cdnur (credit/debit notes — sign driven strictly by the <b>Document Type</b> column: C = Credit Note, D = Debit Note; both are stated positive in the raw export) · b2cs, b2csa (aggregate B2C-small summaries — included in totals and the Monthly Summary; no invoice-level match possible) · b2ba, expa, cdnra, cdnura (amendments).<br><br>
-      <b>Amendments:</b> if an amended row's Original Invoice/Note No. is found in this year's own b2b/exp/cdnr/cdnur data, the original is replaced by the amended figures. If not found (prior-year invoice amended this year), it's kept standalone and flagged as not reconcilable against this year's Sales Register.<br><br>
+      <b>GSTR-1 tabs covered:</b> b2b, exp (regular outward supply) · cdnr, cdnur (credit/debit notes — sign driven strictly by the <b>Document Type</b> column: C = Credit Note, D = Debit Note; both are stated positive in the raw export) · b2cs, b2csa (aggregate B2C-small summaries — included in totals and the Monthly Summary / B2CS Monthly Summary; no invoice-level match possible) · b2ba, expa, cdnra, cdnura (amendments).<br><br>
+      <b>Amendments:</b> if an amended row's Original Invoice/Note No. is found in this year's own b2b/exp/cdnr/cdnur data, the original is replaced by the amended figures. If not found (prior-year invoice amended this year), it's kept standalone and flagged as not reconcilable against this year's Sales Register. B2CSA is different: it carries only the ORIGINAL MONTH being revised, so it replaces every original B2CS row for that month rather than one specific row.<br><br>
       <b>Matching:</b> GSTIN-aware, in three passes: (1) GSTIN + exact normalized Bill/Voucher No.; (2) GSTIN + numeric part of the number (catches books "GC0006" filed as "GC006" or an e-invoice numbered "6"); (3) number alone, only where a GSTIN is unavailable — two different GSTINs are never matched to each other. Tolerance of ₹2 on Taxable Value, IGST, CGST, SGST and Invoice Value.
     </div>
   </div>
@@ -660,7 +660,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         var pos = cellVal(ws, r, cPos) || '';
         var rate = cellVal(ws, r, cRate);
         var rateTxt = (rate === null || rate === undefined || rate === '') ? '' : (' @ ' + rate + '%');
-        rows.push({
+        var rowObj = {
           Tab: tabName.toUpperCase(),
           DocType: 'B2C Summary' + (isAmendment ? ' (Amended)' : ''),
           GSTIN: '',
@@ -670,8 +670,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           IsSummary: true,
           InvoiceValue: round2(tax + ig + cg + sg),
           TaxableValue: round2(tax), IGST: round2(ig), CGST: round2(cg), SGST: round2(sg),
-          AmendmentNote: isAmendment ? 'B2CSA amendment of period ' + (cPeriod !== undefined ? readDateOrTextCellValue(ws[XLSXaddr(r, cPeriod)]) : '') + ' — verify against the original B2CS row; amounts here are the REVISED figures' : ''
-        });
+          AmendmentNote: ''
+        };
+        if (isAmendment) b2csAmendments.push(rowObj);
+        else rows.push(rowObj);
       }
     }
 
@@ -683,8 +685,43 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     parseSimpleTab('cdnra', true, null);
     parseSimpleTab('cdnur', false, null);
     parseSimpleTab('cdnura', true, null);
+    var b2csAmendments = [];
     parseB2CSTab('b2cs', false);
     parseB2CSTab('b2csa', true);
+
+    // B2CSA restates the ENTIRE original month's B2CS aggregate: the portal's amendment record
+    // carries only the "Original Month" being revised, not which POS/rate line within it, so — unlike
+    // B2B/CDNR invoice amendments, which replace exactly one document — every original B2CS row for
+    // that period is superseded by the amendment rows, never added alongside them (adding both was
+    // the source of the CGST/SGST/taxable difference reported against the B2CS Monthly Summary).
+    function b2csPeriodKey(p) {
+      var s = String(p === null || p === undefined ? '' : p).replace(/\D/g, '');
+      if (s.length === 5) s = '0' + s;
+      return s.length === 6 ? s : null;
+    }
+    if (b2csAmendments.length) {
+      var origB2csByPeriod = {};
+      rows.forEach(function (row) {
+        if (row.Tab !== 'B2CS') return;
+        var pk = b2csPeriodKey(row.Period);
+        if (pk) (origB2csByPeriod[pk] = origB2csByPeriod[pk] || []).push(row);
+      });
+      var amendedPeriods = {};
+      b2csAmendments.forEach(function (amd) {
+        var pk = b2csPeriodKey(amd.Period);
+        var origMatches = pk ? (origB2csByPeriod[pk] || []) : [];
+        if (pk) amendedPeriods[pk] = true;
+        amd.AmendmentNote = origMatches.length
+          ? ('Replaces ' + origMatches.length + ' original B2CS row(s) for period ' + amd.Period + ' found in current year data')
+          : ('Original B2CS data for period ' + amd.Period + ' NOT found in current year GSTR-1 — likely a prior-year period amended this year; not reconcilable against current year Sales Register');
+      });
+      rows = rows.filter(function (row) {
+        if (row.Tab !== 'B2CS') return true;
+        var pk = b2csPeriodKey(row.Period);
+        return !(pk && amendedPeriods[pk]);
+      });
+      rows = rows.concat(b2csAmendments);
+    }
 
     // Apply amendments: replace original if found among 'rows', else keep standalone flagged
     var rowsByKey = {};
@@ -1068,13 +1105,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       '1. TALLY REGISTER — Sales Register, Credit Note Register and (if uploaded) Debit Note Register are combined into ONE "Net Sales Register" sheet, distinguished by the Voucher Type column, exactly as read from each file — no manual combination needed.',
       '2. TAX LEDGER MAPPING — Every business names its GST ledgers differently. The mapping used for this run is shown below; update it before re-running the tool on a new client whose chart of accounts differs.',
       '3. Dr/Cr LOGIC — Tally stores Dr/Cr as part of a cell\'s NUMBER FORMAT, not as separate text. Cr = addition to sales/tax; Dr = reduction (discount, round-off, or a Credit Note\'s natural reversal).',
-      '4. GSTR-1 TABS COVERED — b2b, exp (outward supplies); cdnr, cdnur (credit/debit notes); b2cs, b2csa (B2C-small aggregate summaries); b2ba, expa, cdnra, cdnura (amendments). B2CS rows carry no invoice numbers, so they are included in all totals and the Monthly Summary but cannot be matched invoice-by-invoice; books invoices without a GSTIN that are absent from b2b are flagged as "likely reported under B2CS".',
-      '5. AMENDMENT HANDLING — If an amended row\'s Original Invoice/Note No. is found among this year\'s own b2b/exp/cdnr/cdnur rows, the original is REMOVED and replaced by the amended figures. If not found (prior financial year), the amendment is kept standalone and flagged as not reconcilable against the current year\'s Sales Register.',
+      '4. GSTR-1 TABS COVERED — b2b, exp (outward supplies); cdnr, cdnur (credit/debit notes); b2cs, b2csa (B2C-small aggregate summaries); b2ba, expa, cdnra, cdnura (amendments). B2CS rows carry no invoice numbers, so they are included in all totals and the Monthly Summary but cannot be matched invoice-by-invoice; books invoices without a GSTIN that are absent from b2b are flagged as "likely reported under B2CS" and compared month-wise on the B2CS Monthly Summary tab.',
+      '5. AMENDMENT HANDLING — If an amended row\'s Original Invoice/Note No. is found among this year\'s own b2b/exp/cdnr/cdnur rows, the original is REMOVED and replaced by the amended figures. If not found (prior financial year), the amendment is kept standalone and flagged as not reconcilable against the current year\'s Sales Register. B2CSA is handled differently: since a B2CS amendment carries only the ORIGINAL MONTH being revised (not a POS/rate reference), every original B2CS row for that month is replaced by the amendment rows, not added alongside them.',
       '6. CDNR/CDNUR SIGN — Driven strictly by the DOCUMENT TYPE column: C = Credit Note (flipped negative); D = Debit Note (kept positive). Both are stated positive in the raw GSTR-1 export.',
       '7. MATCHING LOGIC — Documents are paired in three passes so two different parties can never be cross-matched on a colliding number: (1) GSTIN + exact doc no; (2) GSTIN + numeric part of the doc no (catches books "GC0006" filed as "GC006", or an e-invoice numbered "6" booked as "GC006") — such rows carry a Match Note; (3) doc no alone, only where a GSTIN is unavailable (exports, unregistered parties).',
-      '8. TABS IN THIS WORKBOOK — Dashboard | Config & Instructions | Monthly Summary | Net Sales Register | GSTR-1 Register | Match Detail | Mismatch Action | Exceptions.',
+      '8. TABS IN THIS WORKBOOK — Dashboard | Config & Instructions | Monthly Summary | B2CS Monthly Summary | Net Sales Register | GSTR-1 Register | Match Detail | Mismatch Action | Exceptions (Books not GSTR-1) | Exceptions (GSTR-1 not Books).',
       '9. MISMATCH ACTION TAB — Every invoice from Match Detail whose values disagree beyond the tolerance is repeated on the "Mismatch Action" tab, sorted by largest difference first, with the offending head(s) named in the "Mismatch In" column and highlighted red. Use the blank "Action Taken" and "Remarks" columns to record how each difference was resolved.',
-      '10. MONTHLY SUMMARY TAB — Month-wise Taxable Value, IGST, CGST, SGST and Invoice Value as per books (PR) vs GSTR-1 (including B2CS), with differences. Books are grouped by voucher date; GSTR-1 by FILING PERIOD (falling back to document date where the period is absent). GSTR-1 invoice value counts each document once even when it spans multiple rate rows.'
+      '10. MONTHLY SUMMARY TAB — Month-wise Taxable Value, IGST, CGST, SGST and Invoice Value as per books (PR) vs GSTR-1 (including B2CS), with differences. Books are grouped by voucher date; GSTR-1 by FILING PERIOD (falling back to document date where the period is absent). GSTR-1 invoice value counts each document once even when it spans multiple rate rows.',
+      '11. B2CS MONTHLY SUMMARY TAB — The same month-wise comparison as tab 10, scoped to just the books rows with no GSTIN (the "likely reported under B2CS" rows) against every GSTR-1 B2CS/B2CSA row, so a difference points straight at which month\'s B2C filing to check instead of reviewing each "likely B2CS" row individually.',
+      '12. EXCEPTIONS TABS — Split in two: "Exceptions (Books not GSTR-1)" lists books vouchers not found in GSTR-1 (cancelled, non-GST notes, and likely-B2CS rows are pre-explained in green; anything still red needs review), and "Exceptions (GSTR-1 not Books)" lists GSTR-1 documents/B2CS rows not found in the books.'
     ];
     var r = 4;
     instructions.forEach(function (line) {
@@ -1178,60 +1217,114 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       return a.key - b.key;
     });
 
-    var ms = wb.addWorksheet('Monthly Summary');
-    styleTitle(ms.getCell('A1'), 'Monthly Summary — Books (PR) vs GSTR-1');
-    styleSub(ms.getCell('A2'), 'Books grouped by voucher date; GSTR-1 by filing period (incl. B2CS aggregate rows). Red cells = difference beyond the Rs ' + msTolerance + ' tolerance. Large swings in individual months are normal when an invoice\'s voucher date and its GSTR-1 filing period fall in different months (e.g. month-end filings) — they offset across months. Only the TOTAL row is the real reconciliation check; trace it to the Mismatch Action and Exceptions tabs.');
-    var msGroupRow = 4, msHr = 5;
-    ms.mergeCells(msGroupRow, 2, msGroupRow, 6);
-    ms.mergeCells(msGroupRow, 7, msGroupRow, 11);
-    ms.mergeCells(msGroupRow, 12, msGroupRow, 16);
-    var msg1 = ms.getCell(msGroupRow, 2); msg1.value = 'As per Books / Sales Register (PR)'; styleHeader(msg1);
-    var msg2 = ms.getCell(msGroupRow, 7); msg2.value = 'As per GSTR-1 (incl. B2CS)'; styleHeader(msg2);
-    var msg3 = ms.getCell(msGroupRow, 12); msg3.value = 'Difference (PR - GSTR-1)'; styleHeader(msg3);
-    msg2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } };
-    msg3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ORANGE } };
-    var msSubHeads = ['Taxable Value', 'IGST', 'CGST', 'SGST', 'Invoice Value'];
-    var msc = ms.getCell(msHr, 1); msc.value = 'Month'; styleHeader(msc);
-    for (var msGroup = 0; msGroup < 3; msGroup++) {
-      msSubHeads.forEach(function (h, i) {
-        var c = ms.getCell(msHr, 2 + msGroup * 5 + i); c.value = h; styleHeader(c);
-      });
-    }
-    r = msHr + 1;
-    var msFirst = r;
-    msKeys.forEach(function (b) {
-      var diffs = [b.tTax - b.gTax, b.tI - b.gI, b.tC - b.gC, b.tS - b.gS, b.tInv - b.gInv];
-      var vals = [monthLabel(b.key), b.tTax, b.tI, b.tC, b.tS, b.tInv, b.gTax, b.gI, b.gC, b.gS, b.gInv,
-        diffs[0], diffs[1], diffs[2], diffs[3], diffs[4]];
-      vals.forEach(function (v, i) {
-        var cell = ms.getCell(r, i + 1);
-        cell.value = (i === 0) ? v : Math.round(v * 100) / 100;
-        cell.font = { name: 'Arial', size: 10 }; cell.border = thinBorder();
-        if (i >= 1) cell.numFmt = NUMFMT;
-      });
-      diffs.forEach(function (dv, i) {
-        if (Math.abs(dv) > msTolerance) {
-          var cell = ms.getCell(r, 12 + i);
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: REDLIGHT } };
-          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: RED } };
-        }
-      });
-      r++;
-    });
-    var msLast = r - 1;
-    if (msLast >= msFirst) {
-      ms.getCell(r, 1).value = 'Total'; ms.getCell(r, 1).font = { name: 'Arial', size: 10, bold: true }; ms.getCell(r, 1).border = thinBorder();
-      for (var msTc = 2; msTc <= 16; msTc++) {
-        var colLetter = ms.getColumn(msTc).letter;
-        var tc = ms.getCell(r, msTc);
-        tc.value = { formula: 'SUM(' + colLetter + msFirst + ':' + colLetter + msLast + ')' };
-        tc.numFmt = NUMFMT; tc.font = { name: 'Arial', size: 10, bold: true }; tc.border = thinBorder();
+    // Shared layout for a "Books vs GSTR-1, by month" sheet — used for the main Monthly Summary
+    // (all rows) and again, scoped to just the B2C(Small) rows, for the B2CS Monthly Summary below.
+    function buildMonthWiseSheet(sheetName, title, subtitle, groupLabelBooks, groupLabelGstr, keys) {
+      var sh = wb.addWorksheet(sheetName);
+      styleTitle(sh.getCell('A1'), title);
+      styleSub(sh.getCell('A2'), subtitle);
+      var groupRow = 4, hr = 5;
+      sh.mergeCells(groupRow, 2, groupRow, 6);
+      sh.mergeCells(groupRow, 7, groupRow, 11);
+      sh.mergeCells(groupRow, 12, groupRow, 16);
+      var g1 = sh.getCell(groupRow, 2); g1.value = groupLabelBooks; styleHeader(g1);
+      var g2 = sh.getCell(groupRow, 7); g2.value = groupLabelGstr; styleHeader(g2);
+      var g3 = sh.getCell(groupRow, 12); g3.value = 'Difference (Books - GSTR-1)'; styleHeader(g3);
+      g2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL } };
+      g3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ORANGE } };
+      var subHeads = ['Taxable Value', 'IGST', 'CGST', 'SGST', 'Invoice Value'];
+      var c0 = sh.getCell(hr, 1); c0.value = 'Month'; styleHeader(c0);
+      for (var g = 0; g < 3; g++) {
+        subHeads.forEach(function (h, i) {
+          var c = sh.getCell(hr, 2 + g * 5 + i); c.value = h; styleHeader(c);
+        });
       }
-      r += 2;
-      styleSub(ms.getCell(r, 1), 'The TOTAL row above is the only figure that represents a genuine, unresolved reconciliation gap — its Taxable Value / CGST / SGST differences are itemised on the Mismatch Action tab, and its Invoice Value gap is itemised on the Exceptions tab (cancelled vouchers, non-GST credit/debit notes, B2CS aggregates). Differences on individual month rows above largely offset each other and do not need separate investigation.');
+      var rr = hr + 1;
+      var first = rr;
+      keys.forEach(function (b) {
+        var diffs = [b.tTax - b.gTax, b.tI - b.gI, b.tC - b.gC, b.tS - b.gS, b.tInv - b.gInv];
+        var vals = [monthLabel(b.key), b.tTax, b.tI, b.tC, b.tS, b.tInv, b.gTax, b.gI, b.gC, b.gS, b.gInv,
+          diffs[0], diffs[1], diffs[2], diffs[3], diffs[4]];
+        vals.forEach(function (v, i) {
+          var cell = sh.getCell(rr, i + 1);
+          cell.value = (i === 0) ? v : Math.round(v * 100) / 100;
+          cell.font = { name: 'Arial', size: 10 }; cell.border = thinBorder();
+          if (i >= 1) cell.numFmt = NUMFMT;
+        });
+        diffs.forEach(function (dv, i) {
+          if (Math.abs(dv) > msTolerance) {
+            var cell = sh.getCell(rr, 12 + i);
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: REDLIGHT } };
+            cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: RED } };
+          }
+        });
+        rr++;
+      });
+      var last = rr - 1;
+      if (last >= first) {
+        sh.getCell(rr, 1).value = 'Total'; sh.getCell(rr, 1).font = { name: 'Arial', size: 10, bold: true }; sh.getCell(rr, 1).border = thinBorder();
+        for (var tcCol = 2; tcCol <= 16; tcCol++) {
+          var colLetter = sh.getColumn(tcCol).letter;
+          var tCell = sh.getCell(rr, tcCol);
+          tCell.value = { formula: 'SUM(' + colLetter + first + ':' + colLetter + last + ')' };
+          tCell.numFmt = NUMFMT; tCell.font = { name: 'Arial', size: 10, bold: true }; tCell.border = thinBorder();
+        }
+      }
+      sh.columns = [{ width: 18 }].concat([14, 12, 12, 12, 14, 14, 12, 12, 12, 14, 13, 11, 11, 11, 13].map(function (w) { return { width: w }; }));
+      sh.views = [{ state: 'frozen', xSplit: 1, ySplit: hr, showGridLines: false }];
+      return { sheet: sh, firstDataRow: first, lastDataRow: last, headerRow: hr };
     }
-    ms.columns = [{ width: 18 }].concat([14, 12, 12, 12, 14, 14, 12, 12, 12, 14, 13, 11, 11, 11, 13].map(function (w) { return { width: w }; }));
-    ms.views = [{ state: 'frozen', xSplit: 1, ySplit: msHr, showGridLines: false }];
+
+    var msResult = buildMonthWiseSheet(
+      'Monthly Summary',
+      'Monthly Summary — Books (PR) vs GSTR-1',
+      'Books grouped by voucher date; GSTR-1 by filing period (incl. B2CS aggregate rows). Red cells = difference beyond the Rs ' + msTolerance + ' tolerance. Large swings in individual months are normal when an invoice\'s voucher date and its GSTR-1 filing period fall in different months (e.g. month-end filings) — they offset across months. Only the TOTAL row is the real reconciliation check; trace it to the Mismatch Action and Exceptions tabs.',
+      'As per Books / Sales Register (PR)', 'As per GSTR-1 (incl. B2CS)',
+      msKeys
+    );
+    if (msResult.lastDataRow >= msResult.firstDataRow) {
+      styleSub(msResult.sheet.getCell(msResult.lastDataRow + 3, 1), 'The TOTAL row above is the only figure that represents a genuine, unresolved reconciliation gap — its Taxable Value / CGST / SGST differences are itemised on the Mismatch Action tab, and its Invoice Value gap is itemised on the Exceptions tabs (cancelled vouchers, non-GST credit/debit notes) and the B2CS Monthly Summary (aggregate B2C rows). Differences on individual month rows above largely offset each other and do not need separate investigation.');
+    }
+
+    // ============================= B2CS MONTHLY SUMMARY =============================
+    // The "likely reported under B2CS" books rows (no GSTIN, per the Exceptions tabs) can't be matched
+    // invoice-by-invoice against GSTR-1's B2CS aggregate rows — there's nothing to match a bill number
+    // against. This gives the next best thing: the same month-by-month comparison as the main Monthly
+    // Summary, scoped to just this subset, so a difference points straight at which month's B2C filing
+    // to check instead of leaving the user to eyeball 100+ "likely B2CS" rows on the Exceptions tab.
+    var b2csBuckets = {};
+    function b2csBucket(key) {
+      var k = key === null ? 'null' : String(key);
+      if (!b2csBuckets[k]) b2csBuckets[k] = { key: key, tTax: 0, tI: 0, tC: 0, tS: 0, tInv: 0, gTax: 0, gI: 0, gC: 0, gS: 0, gInv: 0 };
+      return b2csBuckets[k];
+    }
+    b2csLikely.forEach(function (x) {
+      var b = b2csBucket(monthKeyFromDate(x.Date));
+      b.tTax += x.TaxableValue || 0; b.tI += x.IGST || 0; b.tC += x.CGST || 0; b.tS += x.SGST || 0; b.tInv += x.InvoiceValue || 0;
+    });
+    var b2csGstrRows = gstr1Rows.filter(function (x) { return x.IsSummary; });
+    b2csGstrRows.forEach(function (x) {
+      var b = b2csBucket(monthKeyFromPeriod(x.Period));
+      b.gTax += x.TaxableValue || 0; b.gI += x.IGST || 0; b.gC += x.CGST || 0; b.gS += x.SGST || 0; b.gInv += x.InvoiceValue || 0;
+    });
+    var b2csKeys = Object.keys(b2csBuckets).map(function (k) { return b2csBuckets[k]; }).sort(function (a, b) {
+      if (a.key === null) return 1;
+      if (b.key === null) return -1;
+      return a.key - b.key;
+    });
+    if (hasB2CS || b2csLikely.length) {
+      var b2csResult = buildMonthWiseSheet(
+        'B2CS Monthly Summary',
+        'B2CS Monthly Summary — Books (no-GSTIN sales) vs GSTR-1 B2CS',
+        'Books side: Sales/CN/DN rows with no GSTIN (the "likely reported under B2CS" rows on the Exceptions tabs), grouped by voucher date. GSTR-1 side: every B2CS/B2CSA row, grouped by filing period — a B2CSA amendment REPLACES its original month\'s B2CS row(s) here rather than adding to them (see GSTR-1 Register). Red cells = difference beyond the Rs ' + msTolerance + ' tolerance.',
+        'As per Books (no GSTIN)', 'As per GSTR-1 B2CS (amendments applied)',
+        b2csKeys
+      );
+      if (b2csResult.lastDataRow < b2csResult.firstDataRow) {
+        b2csResult.sheet.getCell(b2csResult.firstDataRow, 1).value = 'No B2C(Small)/no-GSTIN data found in either the books or the GSTR-1 export.';
+        b2csResult.sheet.getCell(b2csResult.firstDataRow, 1).font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF666666' } };
+      }
+    }
 
     // ============================= NET SALES REGISTER =============================
     var ns = wb.addWorksheet('Net Sales Register');
@@ -1431,15 +1524,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     mm.columns = [16, 16, 11, 26, 12, 12, 28, 13, 13, 11, 13, 13, 11, 12, 12, 10, 12, 12, 10, 12, 12, 10, 13, 22, 34].map(function (w) { return { width: w }; });
     mm.views = [{ state: 'frozen', ySplit: mmHr, showGridLines: false }];
 
-    // ============================= EXCEPTIONS =============================
-    var ex = wb.addWorksheet('Exceptions');
-    styleTitle(ex.getCell('A1'), 'Exceptions — In Books but not in GSTR-1, and vice versa');
-    styleSub(ex.getCell('A2'), 'Review every red row. Green rows below are expected/explained exceptions.');
+    // ============================= EXCEPTIONS (BOOKS NOT IN GSTR-1) =============================
+    var exA = wb.addWorksheet('Exceptions (Books not GSTR-1)');
+    styleTitle(exA.getCell('A1'), 'Exceptions A — In Books but not in GSTR-1');
+    styleSub(exA.getCell('A2'), 'Review every red row. Green rows below are expected/explained exceptions.');
     r = 4;
-    ex.getCell(r, 1).value = 'A. In Tally but Missing in GSTR-1'; ex.getCell(r, 1).font = { name: 'Arial', size: 10, bold: true }; r++;
     var exHeadersA = ['Date', 'Customer Name', 'GSTIN', 'Voucher Type', 'Bill No', 'Invoice Value', 'Taxable Value', 'IGST', 'CGST', 'SGST', 'Remark'];
-    exHeadersA.forEach(function (h, i) { var c = ex.getCell(r, i + 1); c.value = h; styleHeader(c); });
+    exHeadersA.forEach(function (h, i) { var c = exA.getCell(r, i + 1); c.value = h; styleHeader(c); });
     r++;
+    var exAFirst = r;
     // Same doc no present on the GSTR-1 exception side => almost certainly a GSTIN
     // discrepancy between books and filing, not a genuinely missing document.
     var exGstr1ByDocKey = {};
@@ -1454,44 +1547,55 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       var twin = exGstr1ByDocKey[String(x.BillNo || '').trim().toUpperCase().replace(/\s+/g, '')];
       var remark = isCancel ? 'Cancelled voucher - Nil value, correctly not in GSTR-1' :
         (isNonGst ? 'Non-GST Credit/Debit Note (Output GST = Nil) - correctly outside CDNR' :
-        (isB2csLikely ? 'No GSTIN in books - likely reported under B2CS (aggregate B2C summary); verify amounts on Monthly Summary / GSTR-1 Register B2CS rows' :
+        (isB2csLikely ? 'No GSTIN in books - likely reported under B2CS (aggregate B2C summary); see the B2CS Monthly Summary tab' :
         (twin ? 'NEEDS REVIEW - GSTIN DISCREPANCY: GSTR-1 has doc "' + twin[0].DocNo + '" (' + (twin[0].Party || '') + ') under GSTIN ' + (twin[0].GSTIN || '(blank)') + ' vs books GSTIN ' + (x.GSTIN || '(blank)') + ' - verify which GSTIN is correct' :
         'NEEDS REVIEW - genuinely missing in GSTR-1')));
       var vals = [x.Date ? shortDateLabel(x.Date) : '', x.CustomerName, x.GSTIN || '', x.VoucherType, x.BillNo,
         x.InvoiceValue, x.TaxableValue, x.IGST, x.CGST, x.SGST, remark];
       vals.forEach(function (v, i) {
-        var cell = ex.getCell(r, i + 1);
+        var cell = exA.getCell(r, i + 1);
         cell.value = v; cell.font = { name: 'Arial', size: 10 }; cell.border = thinBorder();
         if (i + 1 >= 6 && i + 1 <= 10) cell.numFmt = NUMFMT;
       });
       var fillColor = remark.indexOf('NEEDS REVIEW') !== -1 ? REDLIGHT : GREENLIGHT;
-      for (var cc8 = 1; cc8 <= 11; cc8++) ex.getCell(r, cc8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillColor } };
+      for (var cc8 = 1; cc8 <= 11; cc8++) exA.getCell(r, cc8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillColor } };
       r++;
     });
-    r += 2;
-    ex.getCell(r, 1).value = 'B. In GSTR-1 but Missing in Tally Books'; ex.getCell(r, 1).font = { name: 'Arial', size: 10, bold: true }; r++;
+    if (r === exAFirst) {
+      exA.getCell(r, 1).value = 'None - every books voucher was found in GSTR-1.';
+      exA.getCell(r, 1).font = { name: 'Arial', size: 10, italic: true, color: { argb: GREEN } };
+    }
+    exA.columns = [12, 28, 18, 13, 16, 14, 14, 12, 12, 12, 55].map(function (w) { return { width: w }; });
+    exA.views = [{ state: 'frozen', ySplit: 5, showGridLines: false }];
+    exA.autoFilter = { from: { row: 5, column: 1 }, to: { row: Math.max(r - 1, 5), column: 11 } };
+
+    // ============================= EXCEPTIONS (GSTR-1 NOT IN BOOKS) =============================
+    var exB = wb.addWorksheet('Exceptions (GSTR-1 not Books)');
+    styleTitle(exB.getCell('A1'), 'Exceptions B — In GSTR-1 but Missing in Tally Books');
+    styleSub(exB.getCell('A2'), 'Every GSTR-1 document (or B2CS/B2CSA aggregate row) that could not be matched to a books voucher.');
+    r = 4;
     var exHeadersB = ['Tab', 'Doc Type', 'GSTIN', 'Party', 'Doc No', 'Doc Date', 'Invoice Value', 'Taxable Value', 'IGST', 'CGST', 'SGST'];
-    exHeadersB.forEach(function (h, i) { var c = ex.getCell(r, i + 1); c.value = h; styleHeader(c); });
+    exHeadersB.forEach(function (h, i) { var c = exB.getCell(r, i + 1); c.value = h; styleHeader(c); });
     r++;
     if (missingInBooks.length) {
       missingInBooks.forEach(function (x) {
         var vals = [x.Tab, x.DocType, x.GSTIN || '', x.Party || '', x.DocNo, x.DocDate ? String(x.DocDate) : '',
           x.InvoiceValue, x.TaxableValue, x.IGST, x.CGST, x.SGST];
         vals.forEach(function (v, i) {
-          var cell = ex.getCell(r, i + 1);
+          var cell = exB.getCell(r, i + 1);
           cell.value = v; cell.font = { name: 'Arial', size: 10 }; cell.border = thinBorder();
           if (i + 1 >= 7 && i + 1 <= 11) cell.numFmt = NUMFMT;
         });
-        for (var cc9 = 1; cc9 <= 11; cc9++) ex.getCell(r, cc9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: REDLIGHT } };
+        for (var cc9 = 1; cc9 <= 11; cc9++) exB.getCell(r, cc9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: REDLIGHT } };
         r++;
       });
     } else {
-      ex.getCell(r, 1).value = 'None - every GSTR-1 document was found in the books.';
-      ex.getCell(r, 1).font = { name: 'Arial', size: 10, italic: true, color: { argb: GREEN } };
+      exB.getCell(r, 1).value = 'None - every GSTR-1 document was found in the books.';
+      exB.getCell(r, 1).font = { name: 'Arial', size: 10, italic: true, color: { argb: GREEN } };
       r++;
     }
-    ex.columns = [12, 28, 18, 13, 16, 14, 14, 12, 12, 12, 55].map(function (w) { return { width: w }; });
-    ex.views = [{ showGridLines: false }];
+    exB.columns = [12, 28, 18, 13, 16, 14, 14, 12, 12, 12].map(function (w) { return { width: w }; });
+    exB.views = [{ state: 'frozen', ySplit: 5, showGridLines: false }];
 
     return wb;
   }
