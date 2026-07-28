@@ -71,9 +71,17 @@ td.d-cash{background:var(--gray-l);}
   <div class="brand-left">
     <h1>GST Annual Reconciliation Tool</h1>
     <p>Output · RCM · Input(ITC) · Cash &amp; Credit Ledger · Payment Summary — Return vs Books, fully interlinked</p>
+    <p>Pradip B. Gandhi &amp; Co. LLP, Chartered Accountants · Prepared by CA Amit N. Lakhtariya</p>
   </div>
 </header>
 <div class="wrap">
+
+  <div class="card">
+    <h2>Client Details</h2>
+    <div class="sub">Company name is auto-filled from the uploaded file names below (editable). GSTIN is not auto-detected — enter it here so it appears correctly on every export.</div>
+    <div class="mfield"><label>Company Name</label><input type="text" id="mCompanyName" placeholder="Auto-filled from uploaded file names"></div>
+    <div class="mfield"><label>GSTIN</label><input type="text" id="mGstin" placeholder="e.g. 24AAACI8857N1Z0" maxlength="15" style="text-transform:uppercase;"></div>
+  </div>
 
   <div class="card">
     <h2><span class="step-badge">1</span>GST Software — Annual 3B "Yearly Summary" export</h2>
@@ -149,6 +157,12 @@ const FY_PERIODS = {"042025":"April","052025":"May","062025":"June","072025":"Ju
   "012026":"January","022026":"February","032026":"March"};
 let state = { yearly:null, ledger:null, srData:null, prData:null, meta:{} };
 
+const elCompanyName = document.getElementById("mCompanyName");
+const elGstin = document.getElementById("mGstin");
+let companyNameEditedByUser = false;
+elCompanyName.addEventListener("input", ()=>{ companyNameEditedByUser = true; state.meta.companyName = elCompanyName.value.trim() || null; });
+elGstin.addEventListener("input", ()=>{ state.meta.gstin = elGstin.value.trim().toUpperCase() || null; });
+
 function readWorkbook(file){
   return new Promise((resolve,reject)=>{
     const r = new FileReader();
@@ -158,6 +172,26 @@ function readWorkbook(file){
   });
 }
 function sheetRows(ws){ return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
+
+// ---------- Company name auto-detect (from uploaded file names) ----------
+// GSTIN is intentionally NOT auto-detected: a blind scan for GSTIN-shaped text
+// inside the uploaded workbooks kept locking onto an unrelated code (e.g. a
+// preparer/template GSTIN printed on every export) instead of the client's own
+// GSTIN. Showing a wrong GSTIN on a reconciliation report is worse than
+// showing none, so the heading omits GSTIN unless entered manually below.
+function extractCompanyName(filename){
+  if(!filename) return null;
+  let base = filename.replace(/\.[^.]+$/,"");
+  const idx = base.toUpperCase().indexOf("RECONCILIATION");
+  if(idx>=0) base = base.slice(idx+"RECONCILIATION".length);
+  base = base.replace(/^[_\-\s]+|[_\-\s]+$/g,"").replace(/[_\-]+/g," ").trim();
+  return base || null;
+}
+function updateMetaFromFile(file){
+  if(companyNameEditedByUser) return; // don't override a manually entered name
+  const name = extractCompanyName(file.name);
+  if(name){ state.meta.companyName = name; elCompanyName.value = name; }
+}
 function num(v){ return (typeof v==="number") ? v : (parseFloat(v)||0); }
 function monthFromLabel(lbl){
   if(!lbl) return null;
@@ -443,6 +477,7 @@ document.getElementById("fileYearly").addEventListener("change", async e=>{
     const interest = parseInterest(wb);
     if(!outward || !inward){ setStat("statYearly", false, "Could not find Outward/Inward tabs"); return; }
     state.yearly = {outward, inward, payment, interest};
+    updateMetaFromFile(f);
     setStat("statYearly", true, `Loaded — Outward, Inward (incl. ITC Reversed), Payment, Interest tabs parsed`);
   }catch(err){ setStat("statYearly", false, "Error: "+err.message); }
 });
@@ -455,6 +490,7 @@ document.getElementById("fileLedger").addEventListener("change", async e=>{
     const cr = parseCreditReversal(wb);
     if(!credit || !cash){ setStat("statLedger", false, "Could not find ITC/CASH tabs"); return; }
     state.ledger = {credit, cash, creditReversalClosing: cr};
+    updateMetaFromFile(f);
     setStat("statLedger", true, `Loaded — Credit Ledger, Cash Ledger, Fees/Interest/Penalty/Others parsed`);
   }catch(err){ setStat("statLedger", false, "Error: "+err.message); }
 });
@@ -466,6 +502,7 @@ document.getElementById("fileSR").addEventListener("change", async e=>{
     if(!d) d = parseGenericMonthly(wb,"output");
     if(!d){ setStat("statSR", false, "Layout not recognised — grid stays editable"); return; }
     state.srData = d;
+    updateMetaFromFile(f);
     setStat("statSR", true, `Loaded — ${Object.keys(d).length} months mapped`);
   }catch(err){ setStat("statSR", false, "Error: "+err.message); }
 });
@@ -477,6 +514,7 @@ document.getElementById("filePR").addEventListener("change", async e=>{
     if(!d) d = parseGenericMonthly(wb,"input");
     if(!d){ setStat("statPR", false, "Layout not recognised — grid stays editable"); return; }
     state.prData = d;
+    updateMetaFromFile(f);
     setStat("statPR", true, `Loaded — ${Object.keys(d).length} months mapped`);
   }catch(err){ setStat("statPR", false, "Error: "+err.message); }
 });
@@ -562,6 +600,17 @@ document.getElementById("btnBuild").addEventListener("click", buildGrid);
 
 function readVal(id){ const el=document.getElementById(id); return el? num(el.value):0; }
 
+function ledgerClosingTotal(opening, monthly, inKey, outKey){
+  let igst=opening.igst, cgst=opening.cgst, sgst=opening.sgst;
+  MONTHS.forEach(m=>{
+    const mm=monthly[m];
+    igst += mm[inKey].igst - mm[outKey].igst;
+    cgst += mm[inKey].cgst - mm[outKey].cgst;
+    sgst += mm[inKey].sgst - mm[outKey].sgst;
+  });
+  return igst+cgst+sgst;
+}
+
 function computeAll(){
   const outTotals={tv:0,igst:0,cgst:0,sgst:0}, outDataTotals={tv:0,igst:0,cgst:0,sgst:0};
   const rcmTotals={tv:0,igst:0,cgst:0,sgst:0}, rcmDataTotals={tv:0,igst:0,cgst:0,sgst:0};
@@ -599,8 +648,22 @@ function computeAll(){
   const diffVsClosing = closingComputed - manual.closing;
   const diff31Mar = closingComputed31Mar - manual.closing;
 
+  // Portal reconciliation bridge: start from the actual Electronic Credit Ledger closing
+  // balance (Return-basis, as reported on the portal), adjust for the already-identified
+  // Return-vs-Books gaps on Output and Input so it's comparable to our own Books-basis
+  // working, then see what's left over to investigate.
+  const outputDiff = (outTotals.igst+outTotals.cgst+outTotals.sgst) - (outDataTotals.igst+outDataTotals.cgst+outDataTotals.sgst);
+  const inputDiff = (netReturnTotals.igst+netReturnTotals.cgst+netReturnTotals.sgst) - (netBooksTotals.igst+netBooksTotals.cgst+netBooksTotals.sgst);
+  let portalBalance=0, revisedPortalBalance=0, netDiffToSearch=0;
+  if(state.ledger){
+    portalBalance = ledgerClosingTotal(state.ledger.credit.opening, state.ledger.credit.monthly, "accrued","utilised");
+    revisedPortalBalance = portalBalance + outputDiff - inputDiff;
+    netDiffToSearch = revisedPortalBalance + closingComputed31Mar;
+  }
+
   return {outTotals,outDataTotals,rcmTotals,rcmDataTotals,netReturnTotals,netBooksTotals,netBooksAdj,totalAdj,
-    manual, outputTotal, inputTotal, gstPayable, payableTotal, closingComputed, closingComputed31Mar, diffVsClosing, diff31Mar};
+    manual, outputTotal, inputTotal, gstPayable, payableTotal, closingComputed, closingComputed31Mar, diffVsClosing, diff31Mar,
+    outputDiff, inputDiff, portalBalance, revisedPortalBalance, netDiffToSearch};
 }
 
 function fmt(v){ return (v||0).toLocaleString("en-IN",{maximumFractionDigits:2,minimumFractionDigits:2}); }
@@ -637,6 +700,15 @@ function renderSummary(){
   <tr><td class="lbl">Closing Balance as per Books/Portal</td><td colspan="3">${fmt(c.manual.closing)}</td></tr>
   <tr><td class="lbl">Diff — Computed (full year) vs Books/Portal</td><td colspan="3" class="diffcell">${fmt(c.diffVsClosing)}</td></tr>
   <tr><td class="lbl">Diff — Computed (31-March) vs Books/Portal</td><td colspan="3" class="diffcell">${fmt(c.diff31Mar)}</td></tr>
+  ${state.ledger ? `
+  <tr><td class="lbl" colspan="4" style="padding-top:10px;font-weight:700;">Portal Reconciliation Bridge</td></tr>
+  <tr><td class="lbl">Balance as per Portal (Electronic Credit Ledger)</td><td colspan="3">${fmt(c.portalBalance)}</td></tr>
+  <tr><td class="lbl">Add/(Less): Output Difference (Return − Books, already identified)</td><td colspan="3">${fmt(c.outputDiff)}</td></tr>
+  <tr><td class="lbl">Add/(Less): Input Difference (Return − Books, already identified)</td><td colspan="3">${fmt(-c.inputDiff)}</td></tr>
+  <tr class="total"><td class="lbl">Revised Portal Balance</td><td colspan="3">${fmt(c.revisedPortalBalance)}</td></tr>
+  <tr><td class="lbl">Balance as per Our Working (Closing Balance — Computed, 31-March)</td><td colspan="3">${fmt(c.closingComputed31Mar)}</td></tr>
+  <tr class="total"><td class="lbl">Net Difference to Search For</td><td colspan="3" class="diffcell">${fmt(c.netDiffToSearch)}</td></tr>
+  ` : ""}
   </tbody></table>
   <div class="legend">
     <span><span class="swatch" style="background:var(--blue-d)"></span>As per Return</span>
@@ -716,7 +788,9 @@ async function downloadExcel(c){
 
   function titleBlock(ws,title){
     ws.getCell("A1").value = title; ws.getCell("A1").font={bold:true,size:13};
-    ws.getCell("A2").value = "Pradip B. Gandhi & Co. LLP, Chartered Accountants (Prepared by CA Amit N. Lakhtariya) — INCY HEALTHCARE PVT LTD, GSTIN 24AAACI8857N1Z0";
+    const company = state.meta.companyName || "Company Name Not Detected";
+    const gstinPart = state.meta.gstin ? `, GSTIN ${state.meta.gstin}` : "";
+    ws.getCell("A2").value = `Pradip B. Gandhi & Co. LLP, Chartered Accountants (Prepared by CA Amit N. Lakhtariya) — ${company}${gstinPart}`;
     ws.getCell("A2").font = {italic:true,size:9,color:{argb:"FF71807F"}};
   }
 
@@ -903,7 +977,7 @@ async function downloadExcel(c){
     return {sheet:ws, totalRow:r};
   }
   const led = state.ledger;
-  ledgerSheet("Credit Ledger", led.credit.opening, led.credit.monthly, "accrued","utilised","ITC Accrued (Cr)","ITC Utilised (Dr)");
+  const creditLedgerInfo = ledgerSheet("Credit Ledger", led.credit.opening, led.credit.monthly, "accrued","utilised","ITC Accrued (Cr)","ITC Utilised (Dr)");
   ledgerSheet("Cash Ledger", led.cash.cashOpening, led.cash.cashMonthly, "cr","dr","Cash Deposited (Cr)","Cash Utilised (Dr)");
   ledgerSheet("Fees Int Penalty Others", led.cash.fpOpening, led.cash.fpMonthly, "cr","dr","Deposited (Cr)","Utilised (Dr)");
 
@@ -958,7 +1032,29 @@ async function downloadExcel(c){
   wsS.getCell(r,1).value="Diff — Computed (full year) vs Books/Portal";
   wsS.getCell(r,5).value={formula:`E${closeCompRow}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5)); r++;
   wsS.getCell(r,1).value="Diff — Computed (31-March) vs Books/Portal";
-  wsS.getCell(r,5).value={formula:`E${close31Row}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5));
+  wsS.getCell(r,5).value={formula:`E${close31Row}-E${closeActualRow}`}; tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5)); r+=2;
+
+  wsS.getCell(r,1).value="Portal Reconciliation Bridge"; wsS.getCell(r,1).font={bold:true}; r++;
+  wsS.getCell(r,1).value="Balance as per Portal (Electronic Credit Ledger)";
+  wsS.getCell(r,5).value={formula:`'Credit Ledger'!H${creditLedgerInfo.totalRow}+'Credit Ledger'!I${creditLedgerInfo.totalRow}+'Credit Ledger'!J${creditLedgerInfo.totalRow}`};
+  const portalBalRow=r; r++;
+  wsS.getCell(r,1).value="Add/(Less): Output Difference (Return − Books, already identified)";
+  wsS.getCell(r,5).value={formula:`Output!K${outTotalRow}+Output!L${outTotalRow}+Output!M${outTotalRow}`};
+  const outDiffRow=r; r++;
+  wsS.getCell(r,1).value="Add/(Less): Input Difference (Return − Books, already identified)";
+  wsS.getCell(r,5).value={formula:`-('Input (ITC)'!H${inTotalRow}+'Input (ITC)'!I${inTotalRow}+'Input (ITC)'!J${inTotalRow})`};
+  const inDiffRow=r; r++;
+  wsS.getCell(r,1).value="Revised Portal Balance";
+  wsS.getCell(r,5).value={formula:`SUM(E${portalBalRow}:E${inDiffRow})`};
+  tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5));
+  const revisedPortalRow=r; r++;
+  wsS.getCell(r,1).value="Balance as per Our Working (Closing Balance — Computed, 31-March)";
+  wsS.getCell(r,5).value={formula:`E${close31Row}`};
+  const ourWorkingRow=r; r++;
+  wsS.getCell(r,1).value="Net Difference to Search For";
+  wsS.getCell(r,5).value={formula:`E${revisedPortalRow}+E${ourWorkingRow}`};
+  tot(wsS.getCell(r,1)); tot(wsS.getCell(r,5));
+
   for(let rr=gr;rr<=r;rr++) for(let cc=1;cc<=5;cc++) wsS.getCell(rr,cc).numFmt=numFmt===wsS.getCell(rr,cc).numFmt?numFmt:numFmt;
   wsS.getColumn(1).width=42; ["B","C","D","E"].forEach(cl=>wsS.getColumn(cl).width=15);
 
@@ -966,7 +1062,8 @@ async function downloadExcel(c){
   const blob = new Blob([buf], {type:"application/octet-stream"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "GST_Reconciliation_Summary.xlsx";
+  const fnCompany = state.meta.companyName ? "_"+state.meta.companyName.replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"") : "";
+  a.download = `GST_Reconciliation_Summary${fnCompany}.xlsx`;
   a.click();
 }
 
