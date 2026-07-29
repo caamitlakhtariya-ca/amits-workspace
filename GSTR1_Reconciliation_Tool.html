@@ -1813,11 +1813,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   function guessTaxHead(headerName) {
-    var h = String(headerName).toUpperCase();
+    var h = String(headerName).trim().toUpperCase();
     // Match e.g. "Output IGST", "IGST @18%", "IGST-18", "SGST 9%" — but avoid false positives like "Freight" etc.
     if (/(^|[^A-Z])IGST([^A-Z]|$)/.test(h)) return 'IGST';
     if (/(^|[^A-Z])CGST([^A-Z]|$)/.test(h)) return 'CGST';
     if (/(^|[^A-Z])SGST([^A-Z]|$)/.test(h)) return 'SGST';
+    // Some Tally item-invoice exports carry per-line Quantity/Unit/Rate/HSN columns alongside the
+    // real ledger postings — never monetary, so never part of Taxable Value. Exact-match only (not a
+    // substring test) so a genuine ledger like "Rate Difference-Sales" is never caught by this.
+    if (/^(QUANTITY|QTY|ALT\.?\s*UNITS?|RATE|UNIT RATE|ITEM RATE|UNIT PRICE|HSN|HSN CODE|HSN\/SAC)$/.test(h)) return 'IGNORE';
     return '';
   }
 
