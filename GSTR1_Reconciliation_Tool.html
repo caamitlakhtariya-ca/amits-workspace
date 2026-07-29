@@ -394,11 +394,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (isNaN(val) || val === 0) continue;
         var signed = isCr(cell) ? val : (isDr(cell) ? -val : val);
         var bucket = taxBucketFor(headersRaw[cc]);
-        if (bucket) {
+        var lbl = isCr(cell) ? 'Cr' : (isDr(cell) ? 'Dr' : '');
+        if (bucket === 'IGNORE') {
+          // Explicitly excluded — a duplicate/subtotal or non-monetary column (Quantity, Rate, a
+          // "Taxable"/"C"/"S" helper column restating an already-mapped ledger, etc.). Noted for
+          // audit but never added to taxable value or any tax bucket.
+          descParts.push(headersRaw[cc] + ': ' + val.toFixed(2) + ' ' + lbl + ' (ignored)');
+        } else if (bucket) {
           tax[bucket] += signed;
         } else {
           taxable += signed;
-          var lbl = isCr(cell) ? 'Cr' : (isDr(cell) ? 'Dr' : '');
           descParts.push(headersRaw[cc] + ': ' + val.toFixed(2) + ' ' + lbl);
         }
       }
@@ -1350,7 +1355,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       ns.getCell(r, 8).value = row.IGST;
       ns.getCell(r, 9).value = row.CGST;
       ns.getCell(r, 10).value = row.SGST;
-      ns.getCell(r, 11).value = { formula: 'SUM(G' + r + ':J' + r + ')-F' + r };
+      // A row's own Taxable + IGST + CGST + SGST should always equal its Invoice Value — this is an
+      // internal identity, independent of GSTR-1. A nonzero Check (Diff) here means a duplicate/
+      // subtotal or non-monetary column was left unmapped and folded into Taxable Value (see the
+      // "WARNING" logged during parsing); highlighted so it's visible even without reading the log.
+      var checkDiff = Math.round(((row.TaxableValue || 0) + (row.IGST || 0) + (row.CGST || 0) + (row.SGST || 0) - (row.InvoiceValue || 0)) * 100) / 100;
+      ns.getCell(r, 11).value = { formula: 'SUM(G' + r + ':J' + r + ')-F' + r, result: checkDiff };
       ns.getCell(r, 12).value = row.Description;
       ns.getCell(r, 13).value = row.Source;
       for (var cc3 = 1; cc3 <= 13; cc3++) {
@@ -1360,6 +1370,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }
       if ((row.VoucherType || '').toLowerCase().indexOf('credit') !== -1) {
         for (var cc4 = 1; cc4 <= 13; cc4++) ns.getCell(r, cc4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: REDLIGHT } };
+      }
+      if (Math.abs(checkDiff) > msTolerance) {
+        var checkCell = ns.getCell(r, 11);
+        checkCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: RED } };
+        checkCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: WHITE } };
       }
       r++;
     });
@@ -1782,7 +1797,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         { v: '', t: 'Not GST — part of Taxable Value' },
         { v: 'IGST', t: 'IGST' },
         { v: 'CGST', t: 'CGST' },
-        { v: 'SGST', t: 'SGST' }
+        { v: 'SGST', t: 'SGST' },
+        { v: 'IGNORE', t: 'Ignore — exclude entirely (duplicate/subtotal/quantity column)' }
       ];
       var guess = existing.hasOwnProperty(h) ? existing[h] : guessTaxHead(h);
       options.forEach(function (o) {
@@ -1847,8 +1863,32 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }, 50);
   });
 
+  // A register row's own Taxable + IGST + CGST + SGST should always reconcile back to its Invoice
+  // Value — that's an internal identity of the row, independent of GSTR-1. When it doesn't, the most
+  // common cause is a duplicate/subtotal column (e.g. a "Taxable"/"C"/"S" helper column added for a
+  // pivot table, restating a ledger that's already mapped) or a non-monetary column (Quantity, Rate)
+  // left unmapped and silently folded into Taxable Value. Map the offending column(s) to a GST head
+  // or to "Ignore" on the mapping screen and re-run.
+  function checkRegisterReconciliation(rows, label, tolerance) {
+    var bad = 0, worstRow = null, worstDiff = 0;
+    rows.forEach(function (row) {
+      var diff = (row.TaxableValue || 0) + (row.IGST || 0) + (row.CGST || 0) + (row.SGST || 0) - (row.InvoiceValue || 0);
+      if (Math.abs(diff) > tolerance) {
+        bad++;
+        if (Math.abs(diff) > Math.abs(worstDiff)) { worstDiff = diff; worstRow = row; }
+      }
+    });
+    if (bad > 0) {
+      logLine('WARNING: ' + label + ' — ' + bad + ' of ' + rows.length + ' rows do not reconcile ' +
+        '(Taxable + IGST + CGST + SGST ≠ Invoice Value by more than ₹' + tolerance + '). ' +
+        'This usually means a duplicate/subtotal or non-monetary column (Quantity, Rate, a "Taxable"/"C"/"S" helper column, etc.) ' +
+        'was left unmapped and got folded into Taxable Value — map it to a GST head or to "Ignore" above and re-run. ' +
+        'Worst row: ' + (worstRow ? (worstRow.BillNo + ' (off by ₹' + worstDiff.toFixed(2) + ')') : ''), 'err');
+    }
+  }
+
   function runReconciliation() {
-    var taxMap = { IGST: [], CGST: [], SGST: [] };
+    var taxMap = { IGST: [], CGST: [], SGST: [], IGNORE: [] };
     var mapSelects = document.querySelectorAll('.col-map-select');
     mapSelects.forEach(function (sel) {
       if (sel.value && taxMap[sel.value]) taxMap[sel.value].push(sel.dataset.header);
@@ -1857,7 +1897,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       logLine('Please map at least one ledger column to a GST head before proceeding.', 'err');
       return;
     }
-    logLine('Tax mapping — IGST: [' + taxMap.IGST.join(', ') + '] | CGST: [' + taxMap.CGST.join(', ') + '] | SGST: [' + taxMap.SGST.join(', ') + ']');
+    logLine('Tax mapping — IGST: [' + taxMap.IGST.join(', ') + '] | CGST: [' + taxMap.CGST.join(', ') + '] | SGST: [' + taxMap.SGST.join(', ') + ']' +
+      (taxMap.IGNORE.length ? ' | Ignored: [' + taxMap.IGNORE.join(', ') + ']' : ''));
 
     // ---- Parse Tally registers ----
     var salesSheetName = firstSheetGuess(state.salesWb, ['Sales Register']);
@@ -1865,6 +1906,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     var salesRange = GSTRCore.XLSXutils_decode_range(salesWs['!ref']);
     var salesParsed = GSTRCore.parseTallyRegister(salesWs, salesRange, taxMap, 'Sales', salesSheetName);
     logLine('Sales Register: ' + salesParsed.rows.length + ' vouchers read.', 'ok');
+    checkRegisterReconciliation(salesParsed.rows, 'Sales Register', 2.0);
 
     var cnParsed = { rows: [] };
     if (state.cnWb) {
@@ -1873,6 +1915,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       var cnRange = GSTRCore.XLSXutils_decode_range(cnWs['!ref']);
       cnParsed = GSTRCore.parseTallyRegister(cnWs, cnRange, taxMap, 'Credit Note', cnSheetName);
       logLine('Credit Note Register: ' + cnParsed.rows.length + ' vouchers read.', 'ok');
+      checkRegisterReconciliation(cnParsed.rows, 'Credit Note Register', 2.0);
     } else {
       logLine('No Credit Note Register uploaded — skipped (optional).', 'warn');
     }
@@ -1885,6 +1928,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       var dnRange = GSTRCore.XLSXutils_decode_range(dnWs['!ref']);
       var dnParsed = GSTRCore.parseTallyRegister(dnWs, dnRange, taxMap, 'Debit Note', dnSheetName);
       logLine('Debit Note Register: ' + dnParsed.rows.length + ' vouchers read.', 'ok');
+      checkRegisterReconciliation(dnParsed.rows, 'Debit Note Register', 2.0);
       tallyRows = tallyRows.concat(dnParsed.rows);
     } else {
       logLine('No Debit Note Register uploaded — skipped (optional).', 'warn');
