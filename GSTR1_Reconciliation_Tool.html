@@ -250,6 +250,18 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return /Cr/.test(z);
   }
 
+  // True for a cell number-formatted as a pure date (e.g. Tally's "d-mmm-yy"), as opposed to a
+  // monetary Dr/Cr-formatted amount. Registers often carry a second date column beyond the primary
+  // "Date" one — e.g. a Credit Note's "Voucher Ref. Date" pointing back to the original invoice being
+  // credited. That column isn't in FIXED_COLS (only the literal "Date" header is), so without this
+  // check its raw Excel date serial (~45000+, since cellDates:false keeps dates as numbers) gets
+  // treated as an ordinary unmapped number and silently added into Taxable Value.
+  function isDateOnlyFormat(z) {
+    var s = (z === null || z === undefined) ? '' : String(z).trim();
+    if (!s) return false;
+    return /^[dmyhs:\-\/,. ]+$/i.test(s) && /[dmy]/i.test(s);
+  }
+
   // Convert an Excel date serial (1900 date system) to a UTC-midnight-anchored JS Date, without ever
   // going through a locale/local-timezone Date constructor. The workbook is read with cellDates:false
   // (see readFileAsWorkbook) specifically so date cells stay raw numbers and are converted here — the
@@ -390,6 +402,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (FIXED_COLS.indexOf(hname) !== -1) continue;
         var cell = ws[XLSXaddr(r, parseInt(cc, 10))];
         if (!cell || cell.v === undefined || cell.v === null || cell.v === '') continue;
+        if (isDateOnlyFormat(cell.z)) continue;
         var val = typeof cell.v === 'number' ? cell.v : parseFloat(cell.v);
         if (isNaN(val) || val === 0) continue;
         var signed = isCr(cell) ? val : (isDr(cell) ? -val : val);
@@ -907,7 +920,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     parseTallyRegister: parseTallyRegister, parseGSTR1Workbook: parseGSTR1Workbook,
     matchRegisters: matchRegisters, round2: round2, FIXED_COLS: FIXED_COLS,
     XLSXutils_decode_range: XLSXutils_decode_range,
-    excelSerialToUTCDate: excelSerialToUTCDate, readDateCellValue: readDateCellValue
+    excelSerialToUTCDate: excelSerialToUTCDate, readDateCellValue: readDateCellValue, isDateOnlyFormat: isDateOnlyFormat
   };
 }));
 
@@ -1747,12 +1760,25 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     if (headerRow === -1) return [];
 
+    // A column's first few data rows tell us its real type — some registers carry a second date
+    // column beyond "Date" itself (e.g. a Credit Note's "Voucher Ref. Date" pointing back to the
+    // original invoice), which the parser now always excludes from Taxable Value regardless of
+    // mapping (see GSTRCore.isDateOnlyFormat). Leaving such a column out of this list too avoids a
+    // dead "Not GST" dropdown row that looks mappable but never actually does anything.
+    function columnLooksDateOnly(cc) {
+      for (var rr = headerRow + 1; rr <= Math.min(headerRow + 20, range.e.r); rr++) {
+        var dc = ws[cellAddr(rr, cc)];
+        if (dc && dc.v !== undefined && dc.v !== null && dc.v !== '') return GSTRCore.isDateOnlyFormat(dc.z);
+      }
+      return false;
+    }
+
     var headers = [];
     for (var cc = range.s.c; cc <= range.e.c; cc++) {
       var hc = ws[cellAddr(headerRow, cc)];
       if (hc && hc.v !== undefined && hc.v !== null && String(hc.v).trim() !== '') {
         var hv = String(hc.v).trim();
-        if (GSTRCore.FIXED_COLS.indexOf(GSTRCore.normHeader(hv)) === -1) headers.push(hv);
+        if (GSTRCore.FIXED_COLS.indexOf(GSTRCore.normHeader(hv)) === -1 && !columnLooksDateOnly(cc)) headers.push(hv);
       }
     }
     return headers;
