@@ -1017,8 +1017,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     var gTax = sumBy(gstr1Rows, 'TaxableValue'), gI = sumBy(gstr1Rows, 'IGST'), gC = sumBy(gstr1Rows, 'CGST'), gS = sumBy(gstr1Rows, 'SGST'), gInv = sumBy(gstr1Rows, 'InvoiceValue');
     var taxDiff = (tI + tC + tS) - (gI + gC + gS);
 
+    var taxDiffIsNil = Math.abs(taxDiff) <= 2;
     var cards = [
-      { label: 'TOTAL TAX MATCH', val: Math.abs(taxDiff) <= 2 ? 'NIL DIFF' : ('Rs ' + Math.round(taxDiff).toLocaleString()), color: Math.abs(taxDiff) <= 2 ? GREEN : RED },
+      // Label reflects what the card is actually showing: "MATCH" only when there's truly nothing
+      // to report (NIL DIFF); once it's showing a rupee figure, that figure IS the mismatch, so the
+      // label says "MISMATCH" — showing a number under a "MATCH" label reads as if that were the
+      // amount that DID match, backwards from the tax head diffs (IGST/CGST/SGST) below it.
+      { label: taxDiffIsNil ? 'TOTAL TAX MATCH' : 'TOTAL TAX MISMATCH', val: taxDiffIsNil ? 'NIL DIFF' : ('Rs ' + Math.round(taxDiff).toLocaleString()), color: taxDiffIsNil ? GREEN : RED },
       { label: 'INVOICES MATCHED', val: String(matchedOk.length), color: TEAL },
       { label: 'VALUE MISMATCHES', val: String(mismatches.length), color: mismatches.length ? GOLD : GREEN },
       { label: 'MISSING IN GSTR-1', val: String(needsReview.length), color: needsReview.length ? RED : GREEN },
