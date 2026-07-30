@@ -1048,7 +1048,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     d.getCell(r0, 2).font = { name: 'Arial', size: 10, bold: true };
     var hr = r0 + 1;
     ['Head', 'Tally', 'GSTR-1', 'Diff'].forEach(function (h, i) { var c = d.getCell(hr, 2 + i); c.value = h; styleHeader(c); });
-    var compRows = [['Taxable Value', tTax, gTax], ['IGST', tI, gI], ['CGST', tC, gC], ['SGST', tS, gS]];
+    var compRows = [['Invoice Value', tInv, gInv], ['Taxable Value', tTax, gTax], ['IGST', tI, gI], ['CGST', tC, gC], ['SGST', tS, gS]];
     var rr = hr + 1;
     var compFirst = rr;
     compRows.forEach(function (row) {
@@ -1071,7 +1071,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
 
     // Match status table
-    var r1 = 18;
+    var r1 = compLast + 2;
     d.getCell(r1, 2).value = 'Invoice Match Status';
     d.getCell(r1, 2).font = { name: 'Arial', size: 10, bold: true };
     var hr1 = r1 + 1;
@@ -1091,9 +1091,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       c3.alignment = { horizontal: 'center' };
       rr++;
     });
+    var statusLast = rr - 1;
 
     // Register composition
-    var r2 = 25;
+    var r2 = statusLast + 2;
     d.getCell(r2, 2).value = 'Register Composition';
     d.getCell(r2, 2).font = { name: 'Arial', size: 10, bold: true };
     var hr2 = r2 + 1;
@@ -1115,6 +1116,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       rules: [{ type: 'dataBar', gradient: false, border: false, color: { argb: TEAL },
         cfvo: [{ type: 'min' }, { type: 'max' }] }]
     });
+    var regCompLast = rr - 1;
 
     // Reconciliation Bridge — the Tax-Head Comparison "Diff" above is a single headline number that
     // nets together several very different things (a handful of genuine invoice mismatches, an
@@ -1122,30 +1124,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // gap, etc.) — with nothing on the page adding up to it. This breaks that number down by exactly
     // where each rupee comes from, so "where is this difference" always has a traceable answer here
     // instead of requiring a manual line-by-line hunt across every other tab.
-    var r3 = r2 + 12;
+    var r3 = regCompLast + 2;
     d.getCell(r3, 2).value = 'Reconciliation Bridge — where the Tax-Head Comparison Diff above comes from';
     d.getCell(r3, 2).font = { name: 'Arial', size: 10, bold: true };
     var hr3 = r3 + 1;
-    ['Component', 'Taxable Value', 'IGST', 'CGST', 'SGST'].forEach(function (h, i) { var c = d.getCell(hr3, 2 + i); c.value = h; styleHeader(c); });
+    ['Component', 'Invoice Value', 'Taxable Value', 'IGST', 'CGST', 'SGST'].forEach(function (h, i) { var c = d.getCell(hr3, 2 + i); c.value = h; styleHeader(c); });
     function sumField(rowsArr, field) { return rowsArr.reduce(function (a, x) { return a + (x[field] || 0); }, 0); }
     var b2csGstrRowsForBridge = gstr1Rows.filter(function (x) { return x.IsSummary; });
     var bridgeRows = [
-      ['Matched Invoices (exact + value mismatch)', sumField(matched, 'D_Tax'), sumField(matched, 'D_I'), sumField(matched, 'D_C'), sumField(matched, 'D_S')],
-      ['Needs Review (genuinely missing in GSTR-1)', sumField(needsReview, 'TaxableValue'), sumField(needsReview, 'IGST'), sumField(needsReview, 'CGST'), sumField(needsReview, 'SGST')],
-      ['Cancelled Vouchers', sumField(cancelled, 'TaxableValue'), sumField(cancelled, 'IGST'), sumField(cancelled, 'CGST'), sumField(cancelled, 'SGST')],
-      ['Non-GST Credit/Debit Notes (Output GST = Nil)', sumField(nonGstCN, 'TaxableValue'), sumField(nonGstCN, 'IGST'), sumField(nonGstCN, 'CGST'), sumField(nonGstCN, 'SGST')],
+      ['Matched Invoices (exact + value mismatch)', sumField(matched, 'D_Inv'), sumField(matched, 'D_Tax'), sumField(matched, 'D_I'), sumField(matched, 'D_C'), sumField(matched, 'D_S')],
+      ['Needs Review (genuinely missing in GSTR-1)', sumField(needsReview, 'InvoiceValue'), sumField(needsReview, 'TaxableValue'), sumField(needsReview, 'IGST'), sumField(needsReview, 'CGST'), sumField(needsReview, 'SGST')],
+      ['Cancelled Vouchers', sumField(cancelled, 'InvoiceValue'), sumField(cancelled, 'TaxableValue'), sumField(cancelled, 'IGST'), sumField(cancelled, 'CGST'), sumField(cancelled, 'SGST')],
+      ['Non-GST Credit/Debit Notes (Output GST = Nil)', sumField(nonGstCN, 'InvoiceValue'), sumField(nonGstCN, 'TaxableValue'), sumField(nonGstCN, 'IGST'), sumField(nonGstCN, 'CGST'), sumField(nonGstCN, 'SGST')],
       ['B2CS (Books no-GSTIN vs GSTR-1 B2CS/B2CSA net) — see B2CS Monthly Summary',
+        sumField(b2csLikely, 'InvoiceValue') - sumField(b2csGstrRowsForBridge, 'InvoiceValue'),
         sumField(b2csLikely, 'TaxableValue') - sumField(b2csGstrRowsForBridge, 'TaxableValue'),
         sumField(b2csLikely, 'IGST') - sumField(b2csGstrRowsForBridge, 'IGST'),
         sumField(b2csLikely, 'CGST') - sumField(b2csGstrRowsForBridge, 'CGST'),
         sumField(b2csLikely, 'SGST') - sumField(b2csGstrRowsForBridge, 'SGST')],
-      ['Missing in Books (in GSTR-1 only)', -sumField(missingInBooks, 'TaxableValue'), -sumField(missingInBooks, 'IGST'), -sumField(missingInBooks, 'CGST'), -sumField(missingInBooks, 'SGST')]
+      ['Missing in Books (in GSTR-1 only)', -sumField(missingInBooks, 'InvoiceValue'), -sumField(missingInBooks, 'TaxableValue'), -sumField(missingInBooks, 'IGST'), -sumField(missingInBooks, 'CGST'), -sumField(missingInBooks, 'SGST')]
     ];
     rr = hr3 + 1;
     var bridgeFirst = rr;
     bridgeRows.forEach(function (row) {
       d.getCell(rr, 2).value = row[0]; d.getCell(rr, 2).font = { name: 'Arial', size: 10 }; d.getCell(rr, 2).border = thinBorder();
-      for (var bc = 0; bc < 4; bc++) {
+      for (var bc = 0; bc < 5; bc++) {
         var cell = d.getCell(rr, 3 + bc);
         cell.value = Math.round(row[1 + bc] * 100) / 100; cell.numFmt = NUMFMT; cell.border = thinBorder();
       }
@@ -1153,14 +1156,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
     var bridgeLast = rr - 1;
     d.getCell(rr, 2).value = 'Total (should match the Diff column above)'; d.getCell(rr, 2).font = { name: 'Arial', size: 10, bold: true }; d.getCell(rr, 2).border = thinBorder();
-    for (var bridgeCol = 3; bridgeCol <= 6; bridgeCol++) {
+    for (var bridgeCol = 3; bridgeCol <= 7; bridgeCol++) {
       var colLetter = d.getColumn(bridgeCol).letter;
       var cell = d.getCell(rr, bridgeCol);
       cell.value = { formula: 'SUM(' + colLetter + bridgeFirst + ':' + colLetter + bridgeLast + ')' };
       cell.numFmt = NUMFMT; cell.font = { name: 'Arial', size: 10, bold: true }; cell.border = thinBorder();
     }
 
-    d.columns = [{ width: 3 }, { width: 46 }, { width: 16 }, { width: 16 }, { width: 16 }];
+    d.columns = [{ width: 3 }, { width: 46 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }];
 
     // ============================= CONFIG & INSTRUCTIONS =============================
     var cfg = wb.addWorksheet('Config & Instructions');
