@@ -942,15 +942,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       GREEN = 'FF1E7B34', GOLD = 'FFBF8F00', YELLOW = 'FFFFF7CC', REDLIGHT = 'FFFCE4E4',
       GREENLIGHT = 'FFE2F0D9', INPUTFILL = 'FFFFF2CC', WHITE = 'FFFFFFFF', GREYBORDER = 'FFBFBFBF';
 
-  var WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var SHORT_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  // 'Mon Apr 01'-style short label for a UTC-midnight-anchored calendar date. Uses UTC getters
+  // DD/MM/YYYY label for a UTC-midnight-anchored calendar date, for every date shown as text
+  // anywhere in the workbook (Match Detail, Mismatch Action, Exceptions) — kept in one universal
+  // format throughout, matching the GSTR-1 Doc Date column's own DD/MM/YYYY text. Uses UTC getters
   // deliberately — the Date objects here represent a date-only value (see
   // GSTRCore.excelSerialToUTCDate), and reading them with local getters would show the wrong day
   // whenever this code runs in a timezone behind UTC.
   function shortDateLabel(d) {
     if (!(d instanceof Date) || isNaN(d.getTime())) return '';
-    return WEEKDAY_NAMES[d.getUTCDay()] + ' ' + SHORT_MONTH_NAMES[d.getUTCMonth()] + ' ' + ('0' + d.getUTCDate()).slice(-2);
+    var dd = ('0' + d.getUTCDate()).slice(-2), mm = ('0' + (d.getUTCMonth() + 1)).slice(-2);
+    return dd + '/' + mm + '/' + d.getUTCFullYear();
   }
 
   function styleHeader(cell) {
@@ -1413,7 +1414,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     r = nsHr + 1;
     var nsFirst = r;
     sorted.forEach(function (row) {
-      ns.getCell(r, 1).value = row.Date ? new Date(row.Date) : null; ns.getCell(r, 1).numFmt = 'd-mmm-yy';
+      ns.getCell(r, 1).value = row.Date ? new Date(row.Date) : null; ns.getCell(r, 1).numFmt = 'dd/mm/yyyy';
       ns.getCell(r, 2).value = row.CustomerName;
       ns.getCell(r, 3).value = row.GSTIN || '';
       ns.getCell(r, 4).value = row.VoucherType;
