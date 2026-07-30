@@ -940,7 +940,11 @@ document.getElementById('btnDownload').addEventListener('click', async function(
   {
     const d = wb.addWorksheet('Dashboard', {views:[{showGridLines:false}]});
     styleTitle(d.getCell('B2'), 'ITC vs GSTR-2B Reconciliation — Dashboard');
-    styleSub(d.getCell('B3'), 'Generated ' + new Date().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}));
+    {
+      const now = new Date();
+      const genDate = `${String(now.getDate()).padStart(2,'0')}-${String(now.getMonth()+1).padStart(2,'0')}-${now.getFullYear()}`;
+      styleSub(d.getCell('B3'), 'Generated ' + genDate);
+    }
 
     function sumBy(rows, key){ return rows.reduce((a,x)=>a+(x[key]||0),0); }
     const prTV=sumBy(STATE.prLines,'TV'), prI=sumBy(STATE.prLines,'I'), prC=sumBy(STATE.prLines,'C'), prS=sumBy(STATE.prLines,'S');
