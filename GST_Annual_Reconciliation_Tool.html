@@ -344,11 +344,11 @@ function parseCash(wb){
   const monthLookup = {4:"April",5:"May",6:"June",7:"July",8:"August",9:"September",10:"October",11:"November",12:"December",1:"January",2:"February",3:"March"};
 
   let cashOpening = {igst:0,cgst:0,sgst:0};
-  let lastBefore = null;
+  let lastBefore = null, firstInFY = null;
   const cashMonthly = {}; MONTHS.forEach(m=> cashMonthly[m]={cr:{igst:0,cgst:0,sgst:0}, dr:{igst:0,cgst:0,sgst:0}, closing:null});
   const fpOpening = {igst:0,cgst:0,sgst:0};
   const fpMonthly = {}; MONTHS.forEach(m=> fpMonthly[m]={cr:{igst:0,cgst:0,sgst:0}, dr:{igst:0,cgst:0,sgst:0}, closing:null});
-  let fpLastBefore=[0,0,0];
+  let fpLastBefore=[0,0,0], firstInFYFp = null;
   // Payments dated after 31-March but against a return period within this FY (e.g. March
   // liability paid in April) fall outside the FY date window and would otherwise be silently
   // dropped — capture them separately so they're still visible somewhere in the workbook.
@@ -364,8 +364,12 @@ function parseCash(wb){
       continue;
     }
     if(d > fyEnd){
-      const period = String(row[3]||"").trim();
-      if(FY_PERIODS[period]){
+      // Column position of "Period" varies by export (an extra Description column can shift
+      // it), so scan the row for a cell that actually matches an FY period key instead of
+      // trusting one fixed index. Limited to columns before Cr/Dr and the amount columns
+      // (row[5]+) so a coincidentally period-shaped amount can't be misread as a period.
+      const period = row.slice(0,5).map(c=>String(c||"").trim()).find(s=>FY_PERIODS[s]);
+      if(period){
         const crdr2 = String(row[5]||"").trim();
         const tax2 = {igst:v[6],cgst:v[7],sgst:v[8]};
         const bucket = crdr2==="Cr" ? paidAfterFYEnd.cr : paidAfterFYEnd.dr;
@@ -383,12 +387,33 @@ function parseCash(wb){
     else { cashMonthly[m].dr.igst+=tax.igst; cashMonthly[m].dr.cgst+=tax.cgst; cashMonthly[m].dr.sgst+=tax.sgst;
            fpMonthly[m].dr.igst+=combined.igst; fpMonthly[m].dr.cgst+=combined.cgst; fpMonthly[m].dr.sgst+=combined.sgst; }
     cashMonthly[m].closing = {igst:v[10],cgst:v[11],sgst:v[12]};
+    if(!firstInFY) firstInFY = {crdr, tax, balanceAfter:{igst:v[10],cgst:v[11],sgst:v[12]}};
     if(combined.igst||combined.cgst||combined.sgst||combinedBal.igst||combinedBal.cgst||combinedBal.sgst){
       fpMonthly[m].closing = combinedBal;
+      if(!firstInFYFp) firstInFYFp = {crdr, combined, balanceAfter:combinedBal};
     }
   }
-  if(lastBefore) cashOpening = lastBefore;
-  fpOpening.igst=fpLastBefore[0]; fpOpening.cgst=fpLastBefore[1]; fpOpening.sgst=fpLastBefore[2];
+  if(lastBefore){
+    cashOpening = lastBefore;
+  } else if(firstInFY){
+    // No transaction dated before the FY was found to read the opening balance from directly
+    // (some exports only include the current FY's rows). Back it out instead from the first
+    // in-FY transaction's own posted "balance after" figure and its own Cr/Dr movement.
+    const sign = firstInFY.crdr==="Cr" ? -1 : 1;
+    cashOpening = {
+      igst: firstInFY.balanceAfter.igst + sign*firstInFY.tax.igst,
+      cgst: firstInFY.balanceAfter.cgst + sign*firstInFY.tax.cgst,
+      sgst: firstInFY.balanceAfter.sgst + sign*firstInFY.tax.sgst
+    };
+  }
+  if(fpLastBefore[0]||fpLastBefore[1]||fpLastBefore[2]){
+    fpOpening.igst=fpLastBefore[0]; fpOpening.cgst=fpLastBefore[1]; fpOpening.sgst=fpLastBefore[2];
+  } else if(firstInFYFp){
+    const sign = firstInFYFp.crdr==="Cr" ? -1 : 1;
+    fpOpening.igst = firstInFYFp.balanceAfter.igst + sign*firstInFYFp.combined.igst;
+    fpOpening.cgst = firstInFYFp.balanceAfter.cgst + sign*firstInFYFp.combined.cgst;
+    fpOpening.sgst = firstInFYFp.balanceAfter.sgst + sign*firstInFYFp.combined.sgst;
+  }
 
   // fill-forward closing balances
   let lastC = cashOpening;
@@ -815,10 +840,17 @@ function renderLedgerCard(title, opening, monthly, inKey, outKey, inLabel, outLa
   });
   h += `</tbody></table>`;
   if(paidAfterFYEnd && (paidAfterFYEnd.cr.igst||paidAfterFYEnd.cr.cgst||paidAfterFYEnd.cr.sgst||paidAfterFYEnd.dr.igst||paidAfterFYEnd.dr.cgst||paidAfterFYEnd.dr.sgst)){
-    h += `<div class="hint">Not included above (outside the FY date window, excluded from the closing balance) — deposits/payments dated after 31-March but against a return period within this FY (e.g. March liability paid in April):
-    Deposited (Cr) — IGST ${fmt(paidAfterFYEnd.cr.igst)}, CGST ${fmt(paidAfterFYEnd.cr.cgst)}, SGST ${fmt(paidAfterFYEnd.cr.sgst)};
-    Paid (Dr) — IGST ${fmt(paidAfterFYEnd.dr.igst)}, CGST ${fmt(paidAfterFYEnd.dr.cgst)}, SGST ${fmt(paidAfterFYEnd.dr.sgst)}.
-    Cross-check against "Payment made after 31-March" in the Summary sheet.</div>`;
+    const adj = {
+      igst: running.igst+paidAfterFYEnd.cr.igst-paidAfterFYEnd.dr.igst,
+      cgst: running.cgst+paidAfterFYEnd.cr.cgst-paidAfterFYEnd.dr.cgst,
+      sgst: running.sgst+paidAfterFYEnd.cr.sgst-paidAfterFYEnd.dr.sgst
+    };
+    h += `<table style="margin-top:10px;"><tbody>
+    <tr><td class="lbl">Closing Balance (as on 31-March)</td><td colspan="8" class="d-books">${fmt(running.igst)} / ${fmt(running.cgst)} / ${fmt(running.sgst)} (IGST/CGST/SGST)</td></tr>
+    <tr><td class="lbl">Add/(Less): Deposits/Payments dated after 31-March for a return period within this FY (e.g. March liability paid in April)</td><td colspan="8">Cr ${fmt(paidAfterFYEnd.cr.igst)}/${fmt(paidAfterFYEnd.cr.cgst)}/${fmt(paidAfterFYEnd.cr.sgst)} − Dr ${fmt(paidAfterFYEnd.dr.igst)}/${fmt(paidAfterFYEnd.dr.cgst)}/${fmt(paidAfterFYEnd.dr.sgst)}</td></tr>
+    <tr class="total"><td class="lbl">Closing Balance (Incl. FY-period payments made after 31-March)</td><td colspan="8" class="d-books">${fmt(adj.igst)} / ${fmt(adj.cgst)} / ${fmt(adj.sgst)} (IGST/CGST/SGST)</td></tr>
+    </tbody></table>
+    <div class="hint">Cross-check the adjusted closing against "Payment made after 31-March" in the Summary sheet.</div>`;
   }
   card.innerHTML = h;
   return card;
@@ -1091,15 +1123,14 @@ async function downloadExcel(c){
     const totalMovementRow=r; r++;
     if(paidAfterFYEnd && (paidAfterFYEnd.cr.igst||paidAfterFYEnd.cr.cgst||paidAfterFYEnd.cr.sgst||paidAfterFYEnd.dr.igst||paidAfterFYEnd.dr.cgst||paidAfterFYEnd.dr.sgst)){
       r++;
-      ws.getCell(r,1).value="Not included above (outside FY date window) — paid after 31-March for a return period within this FY:"; ws.getCell(r,1).font={italic:true,size:9};
-      r++;
-      ws.getCell(r,1).value="Deposited (Cr)";
-      ws.getCell(r,2).value=paidAfterFYEnd.cr.igst; ws.getCell(r,3).value=paidAfterFYEnd.cr.cgst; ws.getCell(r,4).value=paidAfterFYEnd.cr.sgst;
+      ws.getCell(r,1).value="Add/(Less): Deposits/Payments dated after 31-March for a return period within this FY (e.g. March liability paid in April)";
+      ws.getCell(r,2).value=paidAfterFYEnd.cr.igst-paidAfterFYEnd.dr.igst; ws.getCell(r,3).value=paidAfterFYEnd.cr.cgst-paidAfterFYEnd.dr.cgst; ws.getCell(r,4).value=paidAfterFYEnd.cr.sgst-paidAfterFYEnd.dr.sgst;
       for(let cc=2;cc<=4;cc++) ws.getCell(r,cc).numFmt=numFmt;
-      r++;
-      ws.getCell(r,1).value="Paid (Dr)";
-      ws.getCell(r,5).value=paidAfterFYEnd.dr.igst; ws.getCell(r,6).value=paidAfterFYEnd.dr.cgst; ws.getCell(r,7).value=paidAfterFYEnd.dr.sgst;
-      for(let cc=5;cc<=7;cc++) ws.getCell(r,cc).numFmt=numFmt;
+      const adjRow=r; r++;
+      ws.getCell(r,1).value="Closing Balance (Incl. FY-period payments made after 31-March)";
+      ws.getCell(r,8).value={formula:`H${totalMovementRow}+B${adjRow}`}; ws.getCell(r,9).value={formula:`I${totalMovementRow}+C${adjRow}`}; ws.getCell(r,10).value={formula:`J${totalMovementRow}+D${adjRow}`};
+      for(let cc=8;cc<=10;cc++){ tot(ws.getCell(r,cc)); ws.getCell(r,cc).numFmt=numFmt; }
+      tot(ws.getCell(r,1));
       r++;
       ws.getCell(r,1).value="Cross-check against \"Payment made after 31-March\" in the Summary sheet."; ws.getCell(r,1).font={italic:true,size:9};
     }
