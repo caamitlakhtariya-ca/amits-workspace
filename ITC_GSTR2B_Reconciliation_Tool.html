@@ -14,16 +14,16 @@
   }
   *{box-sizing:border-box;}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;background:linear-gradient(160deg,#F7F5F0 0%,#EFF7F3 100%);color:var(--c5);margin:0;padding:0;}
-  header{background:linear-gradient(120deg,#10614F,#F0924E);color:#fff;padding:0;position:relative;}
+  header{background:transparent;color:var(--c5);padding:0;position:relative;border-bottom:1px solid var(--border);}
   .home-bar{position:absolute;top:16px;right:20px;}
-  .home-link{background:rgba(255,255,255,.16);color:#fff;padding:7px 16px;border-radius:20px;font-size:12.5px;font-weight:bold;text-decoration:none;border:1px solid rgba(255,255,255,.35);transition:.15s;}
-  .home-link:hover{background:rgba(255,255,255,.3);}
+  .home-link{background:linear-gradient(135deg,var(--c4),#0B4A3D);color:#fff;padding:8px 18px;border-radius:100px;font-size:12.5px;font-weight:bold;text-decoration:none;box-shadow:0 10px 22px -8px rgba(16,97,79,.55);transition:.2s ease;}
+  .home-link:hover{transform:translateY(-1px);box-shadow:0 14px 28px -6px rgba(16,97,79,.65);}
   .header-inner{max-width:1180px;margin:0 auto;padding:26px 24px;display:flex;align-items:center;gap:16px;}
-  .brand-badge{width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;letter-spacing:.5px;flex-shrink:0;border:1.5px solid rgba(255,255,255,.4);}
-  header h1{margin:0;font-size:21px;font-weight:700;}
-  header p{margin:4px 0 0;font-size:12.5px;opacity:.92;}
-  header .devby{margin-top:6px;font-size:12px;opacity:.85;}
-  header .devby b{font-weight:700;}
+  .brand-badge{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--c4),var(--teal));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;letter-spacing:.5px;flex-shrink:0;box-shadow:0 12px 26px -10px rgba(16,97,79,.5);}
+  header h1{margin:0;font-size:21px;font-weight:700;color:var(--c5);letter-spacing:-.3px;}
+  header p{margin:4px 0 0;font-size:12.5px;color:#7C8AA5;}
+  header .devby{margin-top:6px;font-size:12px;color:#7C8AA5;}
+  header .devby b{font-weight:700;color:var(--c5);}
   .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 40px;}
   .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px 28px;margin-bottom:20px;box-shadow:0 6px 24px rgba(20,50,110,.06);}
   .card h2{margin:0 0 4px;font-size:16px;color:var(--c5);display:flex;align-items:center;gap:10px;}
