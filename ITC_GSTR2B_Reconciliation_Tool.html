@@ -864,6 +864,7 @@ document.getElementById('btnRunMatch').addEventListener('click', function(){
 
 /* ---------------- STEP 6: GSTIN Summary (unmatched only) ---------------- */
 function buildGstinSummary(){
+  const tol = parseFloat(document.getElementById('tolerance').value)||10;
   const prByG = {}, tbByG = {};
   STATE.match.prOnlyFinal.forEach(r=>{
     const g = r.gstin || `NOGSTIN|${r.party}`;
@@ -872,28 +873,35 @@ function buildGstinSummary(){
   });
   STATE.match.tbOnly.forEach(r=>{
     const g = r.gstin || `NOGSTIN|${r.party}`;
-    if(!tbByG[g]) tbByG[g] = {name:r.party, count:0, TV:0, TAX:0};
+    if(!tbByG[g]) tbByG[g] = {name:r.party, count:0, TV:0, TAX:0, ineligCount:0, ineligTV:0, ineligTAX:0};
     tbByG[g].count++; tbByG[g].TV+=r.TV; tbByG[g].TAX+=r.TAX;
+    if(r.eligible==='N'){ tbByG[g].ineligCount++; tbByG[g].ineligTV+=r.TV; tbByG[g].ineligTAX+=r.TAX; }
   });
   const allG = new Set([...Object.keys(prByG), ...Object.keys(tbByG)]);
   const summary = [];
   allG.forEach(g=>{
     const p = prByG[g]||{name:'',count:0,TV:0,TAX:0};
-    const t = tbByG[g]||{name:'',count:0,TV:0,TAX:0};
+    const t = tbByG[g]||{name:'',count:0,TV:0,TAX:0,ineligCount:0,ineligTV:0,ineligTAX:0};
+    const tb_tax_eligible = round2(t.TAX - t.ineligTAX);
+    const diff_tax = round2(p.TAX-t.TAX);
+    const diff_tax_excl_ineligible = round2(p.TAX - tb_tax_eligible);
     summary.push({
       gstin: g.startsWith('NOGSTIN')?'':g, name: p.name||t.name,
       pr_count:p.count, pr_tv:round2(p.TV), pr_tax:round2(p.TAX),
       tb_count:t.count, tb_tv:round2(t.TV), tb_tax:round2(t.TAX),
-      diff_tax: round2(p.TAX-t.TAX)
+      tb_inelig_count: t.ineligCount, tb_inelig_tax: round2(t.ineligTAX),
+      diff_tax, diff_tax_excl_ineligible
     });
   });
-  summary.sort((a,b)=>Math.abs(b.diff_tax)-Math.abs(a.diff_tax));
+  summary.sort((a,b)=>Math.abs(b.diff_tax_excl_ineligible)-Math.abs(a.diff_tax_excl_ineligible));
   STATE.gstinSummary = summary;
 
-  const genuineGap = summary.filter(s=>Math.abs(s.diff_tax)>10).length;
+  const genuineGap = summary.filter(s=>Math.abs(s.diff_tax_excl_ineligible)>tol).length;
+  const explainedByIneligible = summary.filter(s=>Math.abs(s.diff_tax)>tol && Math.abs(s.diff_tax_excl_ineligible)<=tol).length;
   let html = `<div class="stat-grid">
     <div class="stat"><div class="num">${summary.length}</div><div class="lbl">Unique GSTINs (remainder)</div></div>
-    <div class="stat"><div class="num">${summary.length-genuineGap}</div><div class="lbl">Net to ~0 (noise)</div></div>
+    <div class="stat"><div class="num">${summary.length-genuineGap-explainedByIneligible}</div><div class="lbl">Net to ~0 (noise)</div></div>
+    <div class="stat"><div class="num">${explainedByIneligible}</div><div class="lbl">Explained by Ineligible ITC</div></div>
     <div class="stat"><div class="num">${genuineGap}</div><div class="lbl">Genuine gap</div></div>
   </div>`;
   document.getElementById('gstinSummaryPreview').innerHTML = html;
@@ -961,9 +969,13 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     const prTV=sumBy(STATE.prLines,'TV'), prI=sumBy(STATE.prLines,'I'), prC=sumBy(STATE.prLines,'C'), prS=sumBy(STATE.prLines,'S');
     const tbTV=sumBy(tbPoolFull,'TV'), tbI=sumBy(tbPoolFull,'I'), tbC=sumBy(tbPoolFull,'C'), tbS=sumBy(tbPoolFull,'S');
     const taxDiff = (prI+prC+prS) - (tbI+tbC+tbS);
+    const tbEligibleOnly = tbPoolFull.filter(r=>r.eligible!=='N');
+    const tbI2=sumBy(tbEligibleOnly,'I'), tbC2=sumBy(tbEligibleOnly,'C'), tbS2=sumBy(tbEligibleOnly,'S');
+    const taxDiffExclIneligible = (prI+prC+prS) - (tbI2+tbC2+tbS2);
 
     const cards = [
       {label: Math.abs(taxDiff)<=tol ? 'TAX MATCH' : 'TAX MISMATCH', val: Math.abs(taxDiff)<=tol ? 'NIL DIFF' : ('₹'+Math.round(taxDiff).toLocaleString('en-IN')), color: Math.abs(taxDiff)<=tol ? GREEN : RED},
+      {label: Math.abs(taxDiffExclIneligible)<=tol ? 'TAX MATCH (EXCL. INELIGIBLE)' : 'MISMATCH (EXCL. INELIGIBLE)', val: Math.abs(taxDiffExclIneligible)<=tol ? 'NIL DIFF' : ('₹'+Math.round(taxDiffExclIneligible).toLocaleString('en-IN')), color: Math.abs(taxDiffExclIneligible)<=tol ? GREEN : RED},
       {label:'INVOICES MATCHED', val:String(STATE.match.matched.length), color:TEAL},
       {label:'INELIGIBLE ITC CLAIMED', val:String(ineligibleClaimed.length), color: ineligibleClaimed.length ? RED : GREEN},
       {label:'ITC AT RISK (PR ONLY)', val:String(STATE.match.prOnlyFinal.length), color: STATE.match.prOnlyFinal.length ? RED : GREEN},
@@ -1050,25 +1062,28 @@ document.getElementById('btnDownload').addEventListener('click', async function(
   {
     const ws = wb.addWorksheet('Monthly Summary of ITC');
     styleTitle(ws.getCell('A1'), 'Monthly Summary — Books (PR) vs GSTR-2B');
-    styleSub(ws.getCell('A2'), `Books grouped by voucher date; GSTR-2B by document date (B2B regular + CDNR — the same population matched against PR). Red cells = difference beyond the ₹${tol} tolerance. Large swings in individual months are normal when an invoice's voucher date and its 2B filing period fall in different months — they offset across months. Only the Grand Total row is the real reconciliation check; trace it to the ITC at Risk / Unclaimed ITC / GSTIN Summary tabs.`);
-    ws.mergeCells('A1:G1'); ws.mergeCells('A2:N2');
+    styleSub(ws.getCell('A2'), `Books grouped by voucher date; GSTR-2B by document date (B2B regular + CDNR — the same population matched against PR). Red cells = difference beyond the ₹${tol} tolerance. Large swings in individual months are normal when an invoice's voucher date and its 2B filing period fall in different months — they offset across months. The 4th block backs out GSTR-2B rows marked ineligible (IS ELIGIBLE ITC = N) from the difference, since those were correctly never claimed — that's the number that actually needs chasing. Trace it to the ITC at Risk / Unclaimed ITC / GSTIN Summary tabs.`);
+    ws.mergeCells('A1:G1'); ws.mergeCells('A2:U2');
 
     const groupRow = 4, hr = 5;
     ws.mergeCells(groupRow,2,groupRow,6);
     ws.mergeCells(groupRow,7,groupRow,11);
     ws.mergeCells(groupRow,12,groupRow,16);
+    ws.mergeCells(groupRow,17,groupRow,21);
     const g1=ws.getCell(groupRow,2); g1.value='As per Books / Purchase Register (PR)'; styleHeader(ws,groupRow);
     const g2=ws.getCell(groupRow,7); g2.value='As per GSTR-2B'; g2.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; g2.font=headerFont; g2.alignment={horizontal:'center',wrapText:true};
     const g3=ws.getCell(groupRow,12); g3.value='Difference (PR - 2B)'; g3.fill={type:'pattern',pattern:'solid',fgColor:{argb:ORANGE}}; g3.font=headerFont; g3.alignment={horizontal:'center',wrapText:true};
+    const g4=ws.getCell(groupRow,17); g4.value='Difference (PR - 2B, excl. Ineligible ITC)'; g4.fill={type:'pattern',pattern:'solid',fgColor:{argb:GOLD}}; g4.font=headerFont; g4.alignment={horizontal:'center',wrapText:true};
 
     const subHeads = ['Taxable Value','IGST','CGST','SGST','Invoice Value'];
     ws.getCell(hr,1).value = 'Month';
-    for(let grp=0; grp<3; grp++) subHeads.forEach((h,i)=>{ ws.getCell(hr, 2+grp*5+i).value = h; });
+    for(let grp=0; grp<4; grp++) subHeads.forEach((h,i)=>{ ws.getCell(hr, 2+grp*5+i).value = h; });
     styleHeader(ws, hr);
 
     const monthNames = {4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec',1:'Jan',2:'Feb',3:'Mar'};
     const prMonthly = monthlyOf(STATE.prLines);
     const tbMonthly = monthlyOf(tbPoolFull);
+    const tbEligibleMonthly = monthlyOf(tbPoolFull.filter(r=>r.eligible!=='N'));
     const fyStartCounts = {};
     STATE.prLines.forEach(p=>{
       if(!p.date) return;
@@ -1091,9 +1106,12 @@ document.getElementById('btnDownload').addEventListener('click', async function(
       const key = `${y}-${m}`;
       const p = prMonthly[key] || {TV:0,I:0,C:0,S:0};
       const t = tbMonthly[key] || {TV:0,I:0,C:0,S:0};
-      const pIV = round2(p.TV+p.I+p.C+p.S), tIV = round2(t.TV+t.I+t.C+t.S);
+      const te = tbEligibleMonthly[key] || {TV:0,I:0,C:0,S:0};
+      const pIV = round2(p.TV+p.I+p.C+p.S), tIV = round2(t.TV+t.I+t.C+t.S), teIV = round2(te.TV+te.I+te.C+te.S);
       const diffs = [p.TV-t.TV, p.I-t.I, p.C-t.C, p.S-t.S, pIV-tIV];
-      const vals = [`${monthNames[m]}-${String(y).slice(2)}`, p.TV, p.I, p.C, p.S, pIV, t.TV, t.I, t.C, t.S, tIV, diffs[0], diffs[1], diffs[2], diffs[3], diffs[4]];
+      const diffs2 = [p.TV-te.TV, p.I-te.I, p.C-te.C, p.S-te.S, pIV-teIV];
+      const vals = [`${monthNames[m]}-${String(y).slice(2)}`, p.TV, p.I, p.C, p.S, pIV, t.TV, t.I, t.C, t.S, tIV,
+        diffs[0], diffs[1], diffs[2], diffs[3], diffs[4], diffs2[0], diffs2[1], diffs2[2], diffs2[3], diffs2[4]];
       vals.forEach((v,i)=>{
         const cell = ws.getCell(r, i+1);
         cell.value = (i===0) ? v : round2(v);
@@ -1107,11 +1125,18 @@ document.getElementById('btnDownload').addEventListener('click', async function(
           cell.font = {bold:true, color:{argb:RED}};
         }
       });
+      diffs2.forEach((dv,i)=>{
+        if(Math.abs(dv) > tol){
+          const cell = ws.getCell(r, 17+i);
+          cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:REDLIGHT}};
+          cell.font = {bold:true, color:{argb:RED}};
+        }
+      });
       r++;
     });
     const lastDataRow = r-1;
     ws.getCell(r,1).value = 'Grand Total'; ws.getCell(r,1).font = {bold:true}; ws.getCell(r,1).border = thinBorder();
-    for(let c=2; c<=16; c++){
+    for(let c=2; c<=21; c++){
       const colLetter = ws.getColumn(c).letter;
       const tc = ws.getCell(r,c);
       tc.value = {formula: `SUM(${colLetter}${firstDataRow}:${colLetter}${lastDataRow})`};
@@ -1129,11 +1154,11 @@ document.getElementById('btnDownload').addEventListener('click', async function(
       styleSub(ws.getCell(r,1), `Note: ${outlierRows.length} PR row(s) dated outside this FY window (TV+Tax ₹${outTV.toLocaleString('en-IN')}) are excluded from this table — check dates on those rows in Purchase Register (Final).`);
       ws.getCell(r,1).font = {italic:true, color:{argb:RED}};
     } else {
-      styleSub(ws.getCell(r,1), 'The Grand Total row above is the only figure that represents a genuine, unresolved reconciliation gap — itemised on the ITC at Risk, Unclaimed ITC and GSTIN Summary tabs. Differences on individual month rows largely offset each other and do not need separate investigation.');
+      styleSub(ws.getCell(r,1), 'The Grand Total row above is the only figure that represents a genuine, unresolved reconciliation gap — itemised on the ITC at Risk, Unclaimed ITC and GSTIN Summary tabs (the "excl. Ineligible ITC" block is the one that actually needs chasing). Differences on individual month rows largely offset each other and do not need separate investigation.');
     }
-    ws.mergeCells(`A${r}:P${r}`);
+    ws.mergeCells(`A${r}:U${r}`);
 
-    ws.columns = [{width:12}].concat([14,12,12,12,14, 14,12,12,12,14, 13,11,11,11,13].map(w=>({width:w})));
+    ws.columns = [{width:12}].concat([14,12,12,12,14, 14,12,12,12,14, 13,11,11,11,13, 13,11,11,11,13].map(w=>({width:w})));
     ws.views = [{state:'frozen', xSplit:1, ySplit:hr, showGridLines:false}];
   }
 
@@ -1188,16 +1213,21 @@ document.getElementById('btnDownload').addEventListener('click', async function(
   {
     const ws = wb.addWorksheet('GSTIN Summary (Unmatched)');
     ws.addRow(['GSTIN-wise Summary — Unmatched Remainder Only']);
-    ws.addRow(['ITC at Risk + Unclaimed ITC — Matched excluded']);
+    ws.addRow([`ITC at Risk + Unclaimed ITC — Matched excluded. "Tax Diff (excl. Ineligible ITC)" backs out the portion of the 2B-only gap that GSTR-2B itself marks ineligible (IS ELIGIBLE ITC = N) — that portion was correctly never claimed and needs no follow-up; only the excl.-ineligible figure is a genuine gap.`]);
     ws.addRow([]);
-    const hdr = ws.addRow(['GSTIN','Party Name','PR Count','PR TV','PR Tax','2B Count','2B TV','2B Tax','Tax Diff','Status']);
+    const hdr = ws.addRow(['GSTIN','Party Name','PR Count','PR TV','PR Tax','2B Count','2B TV','2B Tax','Tax Diff','Status','2B Ineligible Count','2B Ineligible Tax','Tax Diff (excl. Ineligible ITC)','Status (excl. Ineligible ITC)']);
     styleHeader(ws, hdr.number);
     STATE.gstinSummary.forEach(s=>{
-      const status = Math.abs(s.diff_tax)<=10 ? 'Nets to ~0' : 'Genuine gap';
-      const row = ws.addRow([s.gstin, s.name, s.pr_count, s.pr_tv, s.pr_tax, s.tb_count, s.tb_tv, s.tb_tax, s.diff_tax, status]);
-      [4,5,7,8,9].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+      const status = Math.abs(s.diff_tax)<=tol ? 'Nets to ~0' : 'Genuine gap';
+      const statusExcl = Math.abs(s.diff_tax_excl_ineligible)<=tol ? 'Nets to ~0' : 'Genuine gap';
+      const row = ws.addRow([s.gstin, s.name, s.pr_count, s.pr_tv, s.pr_tax, s.tb_count, s.tb_tv, s.tb_tax, s.diff_tax, status,
+        s.tb_inelig_count, s.tb_inelig_tax, s.diff_tax_excl_ineligible, statusExcl]);
+      [4,5,7,8,9,12,13].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+      if(s.tb_inelig_count>0 && Math.abs(s.diff_tax)>tol && Math.abs(s.diff_tax_excl_ineligible)<=tol){
+        [11,12,13,14].forEach(c=>{ row.getCell(c).fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF2CC'}}; });
+      }
     });
-    ws.columns = [{width:17},{width:28},{width:10},{width:14},{width:13},{width:10},{width:14},{width:13},{width:13},{width:14}];
+    ws.columns = [{width:17},{width:28},{width:10},{width:14},{width:13},{width:10},{width:14},{width:13},{width:13},{width:14},{width:12},{width:14},{width:16},{width:18}];
   }
 
   // Sheet: Purchase Register (Final)
