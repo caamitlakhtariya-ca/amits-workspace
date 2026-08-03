@@ -202,6 +202,9 @@ function toDisplayDate(iso){
   return `${d}-${m}-${y}`;
 }
 function normGSTIN(g){ return (g||'').toString().trim().toUpperCase(); }
+// GSTR-2B's "IS ELIGIBLE ITC" column: 'N' means the law does not allow this ITC to be claimed at all.
+// Blank/unrecognised values are treated as eligible ('Y') rather than silently flagged ineligible.
+function eligFlag(v){ const s=(v||'').toString().trim().toUpperCase(); return s==='N' ? 'N' : 'Y'; }
 function panOf(g){ g=normGSTIN(g); return g.length>=12 ? g.slice(2,12) : g; }
 function normInv(v){
   if(v===undefined || v===null || v==='') return '';
@@ -684,7 +687,7 @@ function findSheet(wb, name){
   return match ? wb.Sheets[match] : null;
 }
 function parse2B(wb){
-  const STD = {invoice_no:2, invoice_dt:3, gstin:4, rev_chrg:5, name:6, rate:11, tv:12, igst:13, cgst:14, sgst:15, cess:16, value:17, eligible_itc:22};
+  const STD = {invoice_no:2, invoice_dt:3, gstin:4, rev_chrg:5, name:6, rate:11, tv:12, igst:13, cgst:14, sgst:15, cess:16, value:17, eligible_itc:22, reason:23};
   const wsB2B = findSheet(wb, 'B2B');
   const b2bAll = read2BTab(wsB2B, STD);
   const b2bRegular = b2bAll.filter(r=> String(r.rev_chrg||'').trim().toUpperCase()!=='Y');
@@ -693,10 +696,10 @@ function parse2B(wb){
   const BA = {...STD, orig_invoice_no:18, orig_invoice_dt:19};
   const b2baAll = findSheet(wb,'B2BA') ? read2BTab(findSheet(wb,'B2BA'), BA) : [];
 
-  const CDNR_MAP = {cdnr_no:18, cdnr_dt:19, cdnr_type:20, gstin:4, name:6, rev_chrg:5, rate:11, tv:12, igst:13, cgst:14, sgst:15, cess:16, value:17, eligible_itc:24};
+  const CDNR_MAP = {cdnr_no:18, cdnr_dt:19, cdnr_type:20, gstin:4, name:6, rev_chrg:5, rate:11, tv:12, igst:13, cgst:14, sgst:15, cess:16, value:17, eligible_itc:24, reason:25};
   const cdnr = findSheet(wb,'CDNR') ? read2BTab(findSheet(wb,'CDNR'), CDNR_MAP) : [];
 
-  const IMPG_MAP = {port_code:18, shipbill_no:19, sb_dt:20, rate:11, tv:12, igst:13, cgst:14, sgst:15, cess:16, value:17, eligible_itc:21};
+  const IMPG_MAP = {port_code:18, shipbill_no:19, sb_dt:20, rate:11, tv:12, igst:13, cgst:14, sgst:15, cess:16, value:17, eligible_itc:21, reason:22};
   const impg = findSheet(wb,'IMPG') ? read2BTab(findSheet(wb,'IMPG'), IMPG_MAP) : [];
 
   // apply amendments
@@ -746,12 +749,14 @@ function build2BPool(){
   STATE.g2b.b2bFinal.forEach(r=>{
     const tv=r.tv||0, ig=r.igst||0, cg=r.cgst||0, sg=r.sgst||0;
     pool.push({gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.invoice_no, inv_norm:normInv(r.invoice_no),
-      date: toISO(r.invoice_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg});
+      date: toISO(r.invoice_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg,
+      eligible: eligFlag(r.eligible_itc), reason: (r.reason||'').toString().trim()});
   });
   STATE.g2b.cdnr.forEach(r=>{
     const tv=r.tv||0, ig=r.igst||0, cg=r.cgst||0, sg=r.sgst||0;
     pool.push({gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.cdnr_no, inv_norm:normInv(r.cdnr_no),
-      date: toISO(r.cdnr_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg});
+      date: toISO(r.cdnr_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg,
+      eligible: eligFlag(r.eligible_itc), reason: (r.reason||'').toString().trim()});
   });
   return pool;
 }
@@ -759,7 +764,8 @@ function build2BRcmPool(){
   return STATE.g2b.rcm.map(r=>{
     const tv=r.tv||0, ig=r.igst||0, cg=r.cgst||0, sg=r.sgst||0;
     return {gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.invoice_no, inv_norm:normInv(r.invoice_no),
-      date: toISO(r.invoice_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg};
+      date: toISO(r.invoice_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg,
+      eligible: eligFlag(r.eligible_itc), reason: (r.reason||'').toString().trim()};
   });
 }
 
@@ -939,6 +945,11 @@ document.getElementById('btnDownload').addEventListener('click', async function(
   }
   const tol = parseFloat(document.getElementById('tolerance').value)||10;
   const tbPoolFull = build2BPool(); // full "as per GSTR-2B" population (B2B regular + CDNR), same universe the main match pass compares PR against
+  // GSTR-2B's "IS ELIGIBLE ITC" column: N means the ITC cannot legally be claimed at all.
+  // ineligibleClaimed = matched invoices that ARE booked in PR despite 2B marking them ineligible — genuine risk, needs reversal.
+  // ineligibleUnclaimed = 2B-only invoices marked ineligible that were correctly never booked — no action needed, just don't chase them.
+  const ineligibleClaimed = [...STATE.match.matched, ...STATE.match.rcmMatched].filter(m=>m.tb.eligible==='N');
+  const ineligibleUnclaimed = [...STATE.match.tbOnly, ...STATE.match.rcm2bUnmatched].filter(r=>r.eligible==='N');
 
   // ============================= DASHBOARD =============================
   {
@@ -956,8 +967,9 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     const taxDiff = (prI+prC+prS) - (tbI+tbC+tbS);
 
     const cards = [
-      {label:'TOTAL TAX MATCH', val: Math.abs(taxDiff)<=tol ? 'NIL DIFF' : ('₹'+Math.round(taxDiff).toLocaleString('en-IN')), color: Math.abs(taxDiff)<=tol ? GREEN : RED},
+      {label: Math.abs(taxDiff)<=tol ? 'TAX MATCH' : 'TAX MISMATCH', val: Math.abs(taxDiff)<=tol ? 'NIL DIFF' : ('₹'+Math.round(taxDiff).toLocaleString('en-IN')), color: Math.abs(taxDiff)<=tol ? GREEN : RED},
       {label:'INVOICES MATCHED', val:String(STATE.match.matched.length), color:TEAL},
+      {label:'INELIGIBLE ITC CLAIMED', val:String(ineligibleClaimed.length), color: ineligibleClaimed.length ? RED : GREEN},
       {label:'ITC AT RISK (PR ONLY)', val:String(STATE.match.prOnlyFinal.length), color: STATE.match.prOnlyFinal.length ? RED : GREEN},
       {label:'UNCLAIMED ITC (2B ONLY)', val:String(STATE.match.tbOnly.length), color: STATE.match.tbOnly.length ? RED : GREEN},
       {label:'RCM NOT BOOKED', val:String(STATE.match.rcm2bUnmatched.length), color: STATE.match.rcm2bUnmatched.length ? GOLD : GREEN},
@@ -998,8 +1010,10 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     styleHeader(d,hr1);
     const statusRows = [
       ['Matched (PR = 2B)', STATE.match.matched.length, TEAL],
+      ['Ineligible ITC — Claimed in PR (reverse it)', ineligibleClaimed.length, ineligibleClaimed.length?RED:GREEN],
       ['ITC at Risk (PR only)', STATE.match.prOnlyFinal.length, STATE.match.prOnlyFinal.length?RED:GREEN],
       ['Unclaimed ITC (2B only)', STATE.match.tbOnly.length, STATE.match.tbOnly.length?RED:GREEN],
+      ['  — of which ineligible (no action needed)', ineligibleUnclaimed.length, GOLD],
       ['RCM Recovered (cross-match)', STATE.match.rcmMatched.length, GREEN],
       ['RCM Not Booked in PR', STATE.match.rcm2bUnmatched.length, STATE.match.rcm2bUnmatched.length?GOLD:GREEN],
     ];
@@ -1127,34 +1141,52 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     ws.views = [{state:'frozen', xSplit:1, ySplit:hr, showGridLines:false}];
   }
 
-  function addSoloSheet(name, title, subtitle, rows){
+  // withEligibility: rows are 2B-side pool items carrying .eligible ('Y'/'N') and .reason from the
+  // GSTR-2B "IS ELIGIBLE ITC" column — adds Status so a genuinely-ineligible gap isn't chased as a real one.
+  function addSoloSheet(name, title, subtitle, rows, withEligibility){
     const ws = wb.addWorksheet(name);
     ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
-    const hdr = ws.addRow(['Date','Party','GSTIN','Invoice No.','TV','I','C','S','TAX']);
+    const headers = ['Date','Party','GSTIN','Invoice No.','TV','I','C','S','TAX'];
+    if(withEligibility) headers.push('2B Eligible ITC','Reason (per GSTR-2B)','Status');
+    const hdr = ws.addRow(headers);
     styleHeader(ws, hdr.number);
     rows.forEach(r=>{
-      const row = ws.addRow(['', r.party, r.gstin, r.inv_raw, r.TV, r.I, r.C, r.S, r.TAX]);
+      const ineligible = withEligibility && r.eligible==='N';
+      const vals = ['', r.party, r.gstin, r.inv_raw, r.TV, r.I, r.C, r.S, r.TAX];
+      if(withEligibility) vals.push(r.eligible||'Y', ineligible?r.reason:'', ineligible ? 'Ineligible — no action needed' : 'Genuine gap — review');
+      const row = ws.addRow(vals);
       addDateCell(row,1,r.date);
       [5,6,7,8,9].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+      if(ineligible){
+        row.eachCell(cell=>{ cell.font = {italic:true, color:{argb:'FF888888'}}; });
+      }
     });
-    ws.columns = [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12}];
+    ws.columns = withEligibility
+      ? [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12},{width:14},{width:34},{width:26}]
+      : [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12}];
   }
   function addMatchPairSheet(name, title, subtitle, pairs){
     const ws = wb.addWorksheet(name);
     ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
-    const hdr = ws.addRow(['Date','Party (PR)','GSTIN','PR Inv No.','2B Inv No.','PR TV','2B TV','PR Tax','2B Tax','Tax Diff','Match Pass']);
+    const hdr = ws.addRow(['Date','Party (PR)','GSTIN','PR Inv No.','2B Inv No.','PR TV','2B TV','PR Tax','2B Tax','Tax Diff','Match Pass','2B Eligible ITC','Reason (if ineligible)']);
     styleHeader(ws, hdr.number);
     pairs.forEach(m=>{
-      const row = ws.addRow(['', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.tb.inv_raw, m.pr.TV, m.tb.TV, m.pr.TAX, m.tb.TAX, round2(m.pr.TAX-m.tb.TAX), m.pass]);
+      const ineligible = m.tb.eligible==='N';
+      const row = ws.addRow(['', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.tb.inv_raw, m.pr.TV, m.tb.TV, m.pr.TAX, m.tb.TAX, round2(m.pr.TAX-m.tb.TAX), m.pass, m.tb.eligible||'Y', ineligible?m.tb.reason:'']);
       addDateCell(row,1,m.pr.date);
       [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+      if(ineligible){
+        row.eachCell(cell=>{ cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:REDLIGHT}}; });
+        row.getCell(12).font = {bold:true, color:{argb:RED}};
+      }
     });
-    ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:20}];
+    ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:20},{width:14},{width:34}];
   }
 
   // Sheets of concern — placed right after the Dashboard / Monthly Summary
+  addMatchPairSheet('Ineligible ITC (Claimed)','Ineligible ITC — Claimed in Books','GSTR-2B marks these ineligible (IS ELIGIBLE ITC = N) but they are booked/matched in the Purchase Register — this ITC must be reversed.', ineligibleClaimed);
   addSoloSheet('ITC at Risk (PR Only)','ITC at Risk','In PR, not in 2B (post RCM cross-match)', STATE.match.prOnlyFinal);
-  addSoloSheet('Unclaimed ITC (2B Only)','Unclaimed ITC','In 2B, not in PR', STATE.match.tbOnly);
+  addSoloSheet('Unclaimed ITC (2B Only)','Unclaimed ITC','In 2B, not in PR — rows marked Ineligible below need no follow-up', STATE.match.tbOnly, true);
 
   // GSTIN Summary
   {
@@ -1238,7 +1270,7 @@ document.getElementById('btnDownload').addEventListener('click', async function(
   // Reconciliation results
   addMatchPairSheet('Matched Detail','Matched — PR = GSTR-2B', `${STATE.match.matched.length} invoices matched`, STATE.match.matched);
   addMatchPairSheet('RCM Recovered','RCM Cross-Match Recovered','PR-only rows that matched 2B RCM section', STATE.match.rcmMatched);
-  addSoloSheet('RCM Not Booked in PR','RCM — filed, not booked','Genuine compliance gap', STATE.match.rcm2bUnmatched);
+  addSoloSheet('RCM Not Booked in PR','RCM — filed, not booked','Genuine compliance gap — rows marked Ineligible below need no follow-up', STATE.match.rcm2bUnmatched, true);
 
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
