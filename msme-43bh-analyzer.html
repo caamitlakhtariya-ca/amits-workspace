@@ -215,44 +215,92 @@ function toDateOnly(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-/* ---------- 1. Parse raw sheet rows into per-ledger transaction lists ---------- */
+/* ---------- 1. Parse raw sheet rows into per-ledger transaction lists ----------
+   FORMAT-AGNOSTIC. Tally puts different markers in the Particulars column depending
+   on export mode/version: "By"/"To" in detailed mode, "Dr"/"Cr" in condensed mode,
+   sometimes blank. Relying on that marker silently produced empty ledgers.
+   We now identify a transaction row purely by: a real date in col A PLUS a numeric
+   amount in the Debit or Credit column — the only signal reliable across formats.
+*/
+function num(v) {
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  // strip commas/spaces and any trailing Dr/Cr suffix Tally sometimes appends
+  const cleaned = String(v).replace(/[,\s]/g, '').replace(/(Dr|Cr)\.?$/i, '');
+  const n = parseFloat(cleaned);
+  return isFinite(n) ? n : 0;
+}
+
+function cleanStr(v) {
+  if (v == null) return '';
+  return String(v).replace(/_x000D_/g, '').replace(/[\r\n]+/g, ' ').trim();
+}
+
 function parseLedgers(rows) {
   // rows: array of arrays, each row up to 8 columns (A..H), as read by SheetJS with cellDates:true
   const ledgerStartIdx = [];
-  rows.forEach((r, i) => { if (r[0] === 'Ledger:') ledgerStartIdx.push(i); });
+  rows.forEach((r, i) => { if (r && r[0] === 'Ledger:') ledgerStartIdx.push(i); });
   ledgerStartIdx.push(rows.length);
 
   const ledgers = {}; // name -> { txns: [...], closingCr, closingDr }
   for (let li = 0; li < ledgerStartIdx.length - 1; li++) {
     const start = ledgerStartIdx[li];
     const end = ledgerStartIdx[li + 1];
-    const name = rows[start][1];
-    const block = rows.slice(start + 2, end);
+    const name = cleanStr(rows[start][1]);
+    // start+1 (not +2): header/address row count varies between export modes.
+    // Non-transaction rows are filtered out by the date+amount test below anyway.
+    const block = rows.slice(start + 1, end);
     const txns = [];
-    let closingCr = 0, closingDr = 0;
+    let closingCr = 0, closingDr = 0, hasClosingLine = false;
 
     for (const r of block) {
+      if (!r) continue;
       const dRaw = r[0];
       const d = toDateOnly(dRaw instanceof Date ? dRaw : null);
+
       if (!d) {
-        // possible "Closing Balance" row: col0 blank, col1 By/To, col2 'Closing Balance'
-        if (r[1] === 'By' && r[2] === 'Closing Balance') closingCr = Number(r[6]) || 0;
-        if (r[1] === 'To' && r[2] === 'Closing Balance') closingDr = Number(r[5]) || 0;
+        // "Closing Balance" line carries no date. Its label position AND the column the
+        // amount lands in both vary by export mode (condensed mode shifts it left), so
+        // locate the label anywhere in the row, then take the first number after it.
+        let labelIdx = -1;
+        for (let ci = 0; ci < r.length; ci++) {
+          if (/^closing balance$/i.test(cleanStr(r[ci]))) { labelIdx = ci; break; }
+        }
+        if (labelIdx >= 0) {
+          let amt = 0;
+          for (let ci = labelIdx + 1; ci < r.length; ci++) {
+            const n = num(r[ci]);
+            if (n > 0) { amt = n; break; }
+          }
+          // Side marker: "By"/"Cr" => credit (payable); "To"/"Dr" => debit (advance)
+          let isCredit = true;
+          for (let ci = 0; ci < labelIdx; ci++) {
+            const t = cleanStr(r[ci]);
+            if (/^(By|Cr)$/i.test(t)) { isCredit = true; break; }
+            if (/^(To|Dr)$/i.test(t)) { isCredit = false; break; }
+          }
+          if (isCredit) closingCr = amt; else closingDr = amt;
+          hasClosingLine = true;
+        }
         continue;
       }
-      if (r[1] !== 'By' && r[1] !== 'To') continue;
+
+      const debit = num(r[5]);
+      const credit = num(r[6]);
+      // A genuine transaction row must carry an amount on one side or the other.
+      if (debit <= 0 && credit <= 0) continue;
+
       txns.push({
         date: d,
-        drcr: r[1],
-        particulars: r[2] || '',
-        vchType: r[3] || '',
-        vchNo: r[4] != null ? String(r[4]) : '',
-        debit: Number(r[5]) || 0,
-        credit: Number(r[6]) || 0,
+        particulars: cleanStr(r[2]),
+        vchType: cleanStr(r[3]),
+        vchNo: cleanStr(r[4]),
+        debit,
+        credit,
       });
     }
     txns.sort((a, b) => a.date - b.date);
-    ledgers[name] = { txns, closingCr, closingDr };
+    ledgers[name] = { txns, closingCr, closingDr, hasClosingLine };
   }
   return ledgers;
 }
@@ -266,12 +314,26 @@ function runFifoEngine(ledgers, fyEndDate, horizonDate, debitNoteMode) {
   const delayRows = [];
   const outstandingRows = [];
   let computedCloseCr = 0, computedCloseDr = 0;
+  // Tally prints its per-ledger "Closing Balance" line as at the END OF THE EXPORT PERIOD
+  // (the data horizon), not as at the financial year-end — so track that separately,
+  // otherwise Sheet E would be comparing two different dates.
+  let computedHorizonCr = 0, computedHorizonDr = 0;
+  // Parse-integrity check: pure arithmetic net of every parsed transaction (including
+  // post-cutoff invoices that the FIFO scope deliberately ignores), summed only over the
+  // ledgers whose export actually printed a Closing Balance line. This should agree with
+  // Tally exactly — if it doesn't, rows were misread and every other figure is suspect.
+  let rawNetCr = 0, rawNetDr = 0;
   let tallyCloseCr = 0, tallyCloseDr = 0;
 
   for (const credName in ledgers) {
-    const { txns, closingCr, closingDr } = ledgers[credName];
+    const { txns, closingCr, closingDr, hasClosingLine } = ledgers[credName];
     tallyCloseCr += closingCr;
     tallyCloseDr += closingDr;
+    if (hasClosingLine) {
+      let net = 0;
+      for (const t of txns) net += (t.credit || 0) - (t.debit || 0);
+      if (net >= 0) rawNetCr += net; else rawNetDr += -net;
+    }
 
     let advanceBalance = 0;
     let queue = [];
@@ -354,6 +416,9 @@ function runFifoEngine(ledgers, fyEndDate, horizonDate, debitNoteMode) {
 
     computedCloseCr += snapshotQueue.reduce((s, inv) => s + (inv.amount - inv.paidAmt), 0);
     computedCloseDr += snapshotAdvance;
+    // Final state after the whole run = position as at the data horizon date
+    computedHorizonCr += queue.reduce((s, inv) => s + (inv.amount - inv.paidAmt), 0);
+    computedHorizonDr += advanceBalance;
 
     for (const inv of snapshotQueue) {
       const osAtCutoff = inv.amount - inv.paidAmt;
@@ -380,7 +445,7 @@ function runFifoEngine(ledgers, fyEndDate, horizonDate, debitNoteMode) {
 
   return {
     delayRows, outstandingRows,
-    reconciliation: { computedCloseCr, computedCloseDr, tallyCloseCr, tallyCloseDr },
+    reconciliation: { computedCloseCr, computedCloseDr, tallyCloseCr, tallyCloseDr, computedHorizonCr, computedHorizonDr, rawNetCr, rawNetDr },
   };
 }
 
@@ -1026,31 +1091,49 @@ async function buildWorkbook(engineResult, cfg) {
   /* ============ SHEET E: Closing Balance Reconciliation ============ */
   const wsE = wb.addWorksheet('E. Closing Bal Reconciliation');
   wsE.views = [{ showGridLines: false }];
-  wsE.getCell('B2').value = `Reconciliation of computed ${fyEndStr} position to your Tally control totals`;
+  wsE.getCell('B2').value = `Closing balance reconciliation — control totals`;
   wsE.getCell('B2').font = { name: FONT, bold: true, size: 10 };
-  wsE.getCell('B3').value = "'Per file' figures are summed only from ledgers whose export explicitly prints a 'Closing Balance' line — many Tally exports omit this per-ledger, so a 0 here doesn't mean a mismatch. Compare 'Computed' against your own known control totals.";
+  wsE.getCell('B3').value = `IMPORTANT: Tally prints its per-ledger "Closing Balance" line as at the END OF THE EXPORT PERIOD (${horizonStr}), NOT as at the financial year-end (${fyEndStr}). Section 1 below is the like-for-like tie-out and should agree. Section 2 is the year-end position used for the 43B(h) test — compare that against your own ${fyEndStr} trial balance / control total. Also note the "per file" figures cover only those ledgers whose export actually prints a Closing Balance line, so a shortfall there is expected, not an error.`;
   wsE.getCell('B3').font = { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } };
   wsE.getCell('B3').alignment = { wrapText: true };
   const rowsE = [
-    [`Total Credit (payable) balances as on ${fyEndStr} — COMPUTED`, reconciliation.computedCloseCr],
-    [`Total Credit (payable) balances — per 'Closing Balance' lines found in file`, reconciliation.tallyCloseCr],
-    ['Difference', reconciliation.computedCloseCr - reconciliation.tallyCloseCr],
+    ['SECTION 1 — PARSE INTEGRITY CHECK (this is the one that must tie)', ''],
+    [`Net of every parsed transaction as on ${horizonStr} — Credit side, COMPUTED`, reconciliation.rawNetCr],
+    [`Tally's own printed 'Closing Balance' lines — Credit side`, reconciliation.tallyCloseCr],
+    ['Difference — should be NIL', reconciliation.rawNetCr - reconciliation.tallyCloseCr],
     ['', ''],
+    [`Net of every parsed transaction as on ${horizonStr} — Debit side, COMPUTED`, reconciliation.rawNetDr],
+    [`Tally's own printed 'Closing Balance' lines — Debit side`, reconciliation.tallyCloseDr],
+    ['Difference — should be NIL', reconciliation.rawNetDr - reconciliation.tallyCloseDr],
+    ['(Compared only over those ledgers whose export actually printed a Closing Balance line. A NIL difference proves every transaction row was read correctly.)', ''],
+    ['', ''],
+    [`SECTION 2 — Year-end position used for the 43B(h) test (${fyEndStr})`, ''],
+    [`Total Credit (payable) balances as on ${fyEndStr} — COMPUTED`, reconciliation.computedCloseCr],
     [`Total Debit (advance) balances as on ${fyEndStr} — COMPUTED`, reconciliation.computedCloseDr],
-    [`Total Debit (advance) balances — per 'Closing Balance' lines found in file`, reconciliation.tallyCloseDr],
-    ['Difference', reconciliation.computedCloseDr - reconciliation.tallyCloseDr],
+    [`(Compare this against your own ${fyEndStr} trial balance. It will NOT match Tally's printed closing balance, which is struck at ${horizonStr} and includes post-year-end invoices that this analysis deliberately excludes.)`, ''],
+    ['', ''],
+    [`SECTION 3 — In-scope position as on ${horizonStr} (memo only)`, ''],
+    [`Credit balances still open at ${horizonStr}, pre-${fyEndStr} invoices only`, reconciliation.computedHorizonCr],
+    [`Debit (advance) balances at ${horizonStr}`, reconciliation.computedHorizonDr],
+    ['(Excludes invoices dated after the year-end, so this is intentionally lower than Tally\'s closing balance.)', ''],
   ];
   rowsE.forEach(([label, val], i) => {
     const rr = 5 + i;
     if (label === '') return;
-    wsE.getCell(`B${rr}`).value = label;
-    wsE.getCell(`B${rr}`).font = { name: FONT, size: 10 };
+    const labelCell = wsE.getCell(`B${rr}`);
+    labelCell.value = label;
+    const isSection = /^SECTION \d/.test(label);
+    labelCell.font = isSection
+      ? { name: FONT, bold: true, size: 10, color: { argb: NAVY } }
+      : (val === '' ? { name: FONT, italic: true, size: 9, color: { argb: 'FF595959' } } : { name: FONT, size: 10 });
+    labelCell.alignment = { wrapText: true };
+    if (val === '') return;
     const c = wsE.getCell(`C${rr}`);
     c.value = val;
     c.font = { name: FONT, bold: true, size: 10 };
     c.numFmt = '#,##0.00';
   });
-  wsE.getColumn('B').width = 62;
+  wsE.getColumn('B').width = 78;
   wsE.getColumn('C').width = 18;
 
   /* ============ SHEET F: Full FIFO Audit Trail ============ */
@@ -1209,7 +1292,17 @@ runBtn.addEventListener('click', async () => {
 
     logLine(`Parsing ledger blocks…`);
     const ledgers = parseLedgers(uploadedWorkbookRows);
-    logLine(`Found ${Object.keys(ledgers).length} creditor ledgers.`);
+    const ledgerCount = Object.keys(ledgers).length;
+    let parsedTxnCount = 0;
+    Object.values(ledgers).forEach(l => { parsedTxnCount += l.txns.length; });
+    logLine(`Found ${ledgerCount} creditor ledgers, ${parsedTxnCount.toLocaleString()} transactions.`);
+
+    if (ledgerCount === 0) {
+      throw new Error('No "Ledger:" blocks found. This does not look like a Tally multi-ledger export — check the export format (see Staff Instructions above).');
+    }
+    if (parsedTxnCount === 0) {
+      throw new Error('Found ' + ledgerCount + ' ledgers but ZERO transactions — the report would be nil. The Debit/Credit columns could not be read. Check that the export includes the Debit, Credit and running Balance columns, and that the date column is a real date (not text).');
+    }
 
     logLine(`Running FIFO engine (FY-end: ${fyEndDate.toDateString()}, data horizon: ${horizonDate.toDateString()})…`);
     const engineRun = runFifoEngine(ledgers, fyEndDate, horizonDate, debitNoteMode);
