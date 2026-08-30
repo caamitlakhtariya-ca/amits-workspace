@@ -397,6 +397,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       var gtCell = grossTotalCol !== undefined ? ws[XLSXaddr(r, grossTotalCol)] : null;
       var gtVal = (gtCell && typeof gtCell.v === 'number') ? gtCell.v : 0;
 
+      // Some registers carry no Dr/Cr text in the number format at all (just a plain "0.00" style,
+      // with every value stored as a positive number in both the Sales AND the Credit Note export).
+      // Without a marker to read, the only signal left for whether a row is a natural reduction is
+      // its own Voucher Type — a Credit Note should always net negative, a Sales/Debit Note positive.
+      // (Previously the Gross Total fallback used "not Dr ⇒ negate" and the ledger-column fallback
+      // used "not Cr/Dr ⇒ unchanged" — two DIFFERENT unconditional guesses for the same "no marker"
+      // case, which happened to look right on one side and wrong on the other for any voucher type.)
+      var isCreditNoteRow = String(vtype || '').toLowerCase().indexOf('credit') !== -1;
+
       var taxable = 0;
       var tax = { IGST: 0, CGST: 0, SGST: 0 };
       var descParts = [];
@@ -410,9 +419,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (isDateOnlyFormat(cell.z)) continue;
         var val = typeof cell.v === 'number' ? cell.v : parseFloat(cell.v);
         if (isNaN(val) || val === 0) continue;
-        var signed = isCr(cell) ? val : (isDr(cell) ? -val : val);
+        var hasMarker = isCr(cell) || isDr(cell);
+        var signed = isCr(cell) ? val : (isDr(cell) ? -val : (isCreditNoteRow ? -val : val));
         var bucket = taxBucketFor(headersRaw[cc]);
-        var lbl = isCr(cell) ? 'Cr' : (isDr(cell) ? 'Dr' : '');
+        var lbl = isCr(cell) ? 'Cr' : (isDr(cell) ? 'Dr' : (hasMarker ? '' : '(no Dr/Cr marker — sign from Voucher Type)'));
         if (bucket === 'IGNORE') {
           // Explicitly excluded — a duplicate/subtotal or non-monetary column (Quantity, Rate, a
           // "Taxable"/"C"/"S" helper column restating an already-mapped ledger, etc.). Noted for
@@ -426,7 +436,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         }
       }
 
-      var invoiceValue = isDr(gtCell) ? gtVal : -gtVal;
+      var invoiceValue = isDr(gtCell) ? gtVal : (isCr(gtCell) ? -gtVal : (isCreditNoteRow ? -gtVal : gtVal));
 
       out.push({
         Date: dateVal,
