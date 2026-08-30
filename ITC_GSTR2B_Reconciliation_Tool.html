@@ -298,10 +298,12 @@ function detectFileColumns(files, errBox){
       }
       return;
     }
-    // Every OTHER column is a CANDIDATE — but only keep it if it actually carries the
-    // Dr/Cr number-format signature somewhere in the data (the real signal that separates
-    // genuine ledger-amount columns from metadata columns like Voucher Ref. No./Date,
-    // Buyer/Supplier, or a plain "Value" column — name alone isn't reliable across clients).
+    // Every OTHER column is a CANDIDATE — but only keep it if it actually carries a ledger-amount
+    // signal: either the Dr/Cr number-format tag some Tally configs embed, OR the column simply
+    // holds numeric values (most Tally exports encode Dr/Cr via the value's sign instead of the
+    // format string — relying on the format tag alone silently drops every tax/expense column for
+    // those exports, leaving nothing to map in Step 2). Either signal separates a genuine
+    // ledger-amount column from metadata columns like Voucher Ref. No./Date or Buyer/Supplier.
     const fixedColSet = new Set(Object.values(found));
     const lastRowForScan = range.e.r+1;
     const cols = {};
@@ -309,12 +311,14 @@ function detectFileColumns(files, errBox){
       if(fixedColSet.has(c)) continue;
       const name = cellVal(f.ws,HEADER_ROW,c);
       if(!name) continue;
-      let hasDrCr = false;
-      for(let r=HEADER_ROW+1; r<=lastRowForScan && !hasDrCr; r++){
+      let hasAmountSignal = false;
+      for(let r=HEADER_ROW+1; r<=lastRowForScan && !hasAmountSignal; r++){
         const cell = getCell(f.ws,r,c);
-        if(cell && cell.z && (cell.z.indexOf('Dr')>-1 || cell.z.indexOf('Cr')>-1)){ hasDrCr = true; }
+        if(!cell) continue;
+        if(cell.z && (cell.z.indexOf('Dr')>-1 || cell.z.indexOf('Cr')>-1)){ hasAmountSignal = true; }
+        else if(typeof cell.v === 'number'){ hasAmountSignal = true; }
       }
-      if(!hasDrCr) continue; // metadata column — never treated as a ledger amount
+      if(!hasAmountSignal) continue; // metadata column — never treated as a ledger amount
       cols[c] = String(name).trim();
       const key = String(name).trim();
       taxCandidates[key] = (taxCandidates[key]||0)+1;
@@ -439,6 +443,12 @@ function parseAllLedgers(){
           else if(cls.sub==='SGST') S+=amt;
         } else if(cls.cls==='EXPENSE'){ TV+=amt; }
       }
+      // Some Tally exports carry no Dr/Cr tag in the number format at all (see getAmount) and
+      // instead store every purchase-side row as a plain negative number. A non-credit-note row
+      // that still nets negative after getAmount's Dr/Cr handling means that's this ledger's raw
+      // storage convention, not a real negative (a genuine credit note is caught separately, by
+      // Voucher Type, not by sign) — flip it so normal purchases end up positive like GSTR-2B's.
+      if(!/credit/i.test(vtypeS) && (TV+I+C+S) < 0){ TV=-TV; I=-I; C=-C; S=-S; }
       const dateISO = toISO(dateRaw);
       const ref = (vno!==undefined && vno!==null && String(vno).trim()!=='') ? vno : `SYN|${dateISO}|${partyS}|${(TV+I+C+S).toFixed(2)}`;
       const rowKey = `${f.name}|${dateISO}|${vtypeS}|${ref}`;
