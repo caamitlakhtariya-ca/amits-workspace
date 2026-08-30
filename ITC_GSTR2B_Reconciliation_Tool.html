@@ -311,15 +311,16 @@ function detectFileColumns(files, errBox){
     const fixedColSet = new Set(Object.values(found));
     const lastRowForScan = range.e.r+1;
     const cols = {};
+    let anyDrCrTag = false; // does THIS FILE use the Dr/Cr format tag anywhere at all?
     for(let c=1;c<=maxCol;c++){
       if(fixedColSet.has(c)) continue;
       const name = cellVal(f.ws,HEADER_ROW,c);
       if(!name) continue;
       let hasAmountSignal = false;
-      for(let r=HEADER_ROW+1; r<=lastRowForScan && !hasAmountSignal; r++){
+      for(let r=HEADER_ROW+1; r<=lastRowForScan; r++){
         const cell = getCell(f.ws,r,c);
         if(!cell) continue;
-        if(cell.z && (cell.z.indexOf('Dr')>-1 || cell.z.indexOf('Cr')>-1)){ hasAmountSignal = true; }
+        if(cell.z && (cell.z.indexOf('Dr')>-1 || cell.z.indexOf('Cr')>-1)){ hasAmountSignal = true; anyDrCrTag = true; }
         else if(typeof cell.v === 'number'){ hasAmountSignal = true; }
       }
       if(!hasAmountSignal) continue; // metadata column — never treated as a ledger amount
@@ -328,6 +329,7 @@ function detectFileColumns(files, errBox){
       taxCandidates[key] = (taxCandidates[key]||0)+1;
     }
     f.cols = cols;
+    f.anyDrCrTag = anyDrCrTag;
     f.maxCol = maxCol;
     f.fieldCols = found; // {date, particulars, voucherType, voucherNo, gstin, grossTotal}
     validFiles.push(f);
@@ -447,12 +449,15 @@ function parseAllLedgers(){
           else if(cls.sub==='SGST') S+=amt;
         } else if(cls.cls==='EXPENSE'){ TV+=amt; }
       }
-      // Some Tally exports carry no Dr/Cr tag in the number format at all (see getAmount) and
-      // instead store every purchase-side row as a plain negative number. A non-credit-note row
-      // that still nets negative after getAmount's Dr/Cr handling means that's this ledger's raw
-      // storage convention, not a real negative (a genuine credit note is caught separately, by
-      // Voucher Type, not by sign) — flip it so normal purchases end up positive like GSTR-2B's.
-      if(!/credit/i.test(vtypeS) && (TV+I+C+S) < 0){ TV=-TV; I=-I; C=-C; S=-S; }
+      // In the normal case a ledger tags every amount cell's number format Dr/Cr, and getAmount()'s
+      // Dr/Cr-driven sign is authoritative — Cr correctly comes out negative (e.g. a Debit Note used
+      // to reverse previously-claimed ITC), Dr positive, and that must never be second-guessed here,
+      // regardless of Voucher Type text. Only the EXCEPTION — a file with no Dr/Cr tag anywhere at
+      // all (so getAmount had no sign signal and left every value as its raw, unflipped sign) — needs
+      // a fallback: such ledgers store every purchase-side row as a plain negative number, so a
+      // non-credit-note row that nets negative there is that raw storage convention, not a real
+      // reversal; flip it positive to match GSTR-2B's convention.
+      if(!f.anyDrCrTag && !/credit/i.test(vtypeS) && (TV+I+C+S) < 0){ TV=-TV; I=-I; C=-C; S=-S; }
       const dateISO = toISO(dateRaw);
       const ref = (vno!==undefined && vno!==null && String(vno).trim()!=='') ? vno : `SYN|${dateISO}|${partyS}|${(TV+I+C+S).toFixed(2)}`;
       const rowKey = `${f.name}|${dateISO}|${vtypeS}|${ref}`;
