@@ -307,7 +307,10 @@ function detectFileColumns(files, errBox){
     // holds numeric values (most Tally exports encode Dr/Cr via the value's sign instead of the
     // format string — relying on the format tag alone silently drops every tax/expense column for
     // those exports, leaving nothing to map in Step 2). Either signal separates a genuine
-    // ledger-amount column from metadata columns like Voucher Ref. No./Date or Buyer/Supplier.
+    // ledger-amount column from metadata columns like Voucher Ref. No./Buyer/Supplier — but a column
+    // like "Voucher Ref. Date" is ALSO a plain number underneath (an Excel date serial) with no Dr/Cr
+    // tag, so the numeric-fallback signal must explicitly exclude date-formatted cells or it silently
+    // sums date serials into the Taxable Value.
     const fixedColSet = new Set(Object.values(found));
     const lastRowForScan = range.e.r+1;
     const cols = {};
@@ -320,6 +323,8 @@ function detectFileColumns(files, errBox){
       for(let r=HEADER_ROW+1; r<=lastRowForScan; r++){
         const cell = getCell(f.ws,r,c);
         if(!cell) continue;
+        const isDateFmt = cell.z && XLSX.SSF.is_date(cell.z);
+        if(isDateFmt) continue; // never a ledger amount, regardless of Dr/Cr or numeric-ness
         if(cell.z && (cell.z.indexOf('Dr')>-1 || cell.z.indexOf('Cr')>-1)){ hasAmountSignal = true; anyDrCrTag = true; }
         else if(typeof cell.v === 'number'){ hasAmountSignal = true; }
       }
