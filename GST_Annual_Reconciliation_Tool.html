@@ -205,7 +205,7 @@ function monthFromLabel(lbl){
 }
 function blankMonthly(fields){ const o={}; MONTHS.forEach(m=>{ o[m]={}; fields.forEach(f=>o[m][f]=0); }); return o; }
 
-// ---------- Outward tab: Output (Table 3.1a) + RCM (Table 3.1d) ----------
+// ---------- Outward tab: Output (Table 3.1a Taxable + 3.1b Zero-Rated/Export) + RCM (Table 3.1d) ----------
 function parseOutward(wb){
   const ws = wb.Sheets["Outward"]; if(!ws) return null;
   const rows = sheetRows(ws);
@@ -218,7 +218,9 @@ function parseOutward(wb){
     const label=row[1]; if(!label) continue;
     if(String(label).toUpperCase().indexOf("TOTAL")===0) break;
     const m=monthFromLabel(label); if(!m) continue;
-    out[m]={tv:num(row[2]),igst:num(row[3]),cgst:num(row[4]),sgst:num(row[5])};
+    // Columns 7/8 are Table 3.1(b) Zero-Rated (Export) Turnover/IGST — excluding them understates
+    // "As per Return" turnover against Books, which naturally includes export sales.
+    out[m]={tv:num(row[2])+num(row[7]),igst:num(row[3])+num(row[8]),cgst:num(row[4]),sgst:num(row[5])};
     rcm[m]={tv:num(row[11]),igst:num(row[12]),cgst:num(row[13]),sgst:num(row[14])};
   }
   return {out,rcm};
@@ -904,7 +906,7 @@ async function downloadExcel(c){
 
   // ---------------- Output ----------------
   const wsO = wb.addWorksheet("Output");
-  titleBlock(wsO,"Output Reconciliation — As per Return (Table 3.1(a) only) vs As per Books");
+  titleBlock(wsO,"Output Reconciliation — As per Return (Table 3.1(a) Taxable + 3.1(b) Zero-Rated/Export) vs As per Books");
   let gr=5;
   wsO.mergeCells(gr,2,gr,5); hdr(wsO.getCell(gr,2),"As per Return",BL);
   wsO.mergeCells(gr,6,gr,9); hdr(wsO.getCell(gr,6),"As per Books",OL);
