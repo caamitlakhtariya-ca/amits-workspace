@@ -60,6 +60,10 @@
     position:relative;overflow:hidden;min-height:270px;
   }
   .card:hover{transform:translateY(-6px);}
+  .card.wide{grid-column:span 4;min-height:240px;}
+  @media(max-width:980px){.card.wide{grid-column:span 2;}}
+  @media(max-width:560px){.card.wide{grid-column:span 1;}}
+  .card.wide .card-inner{max-width:760px;}
 
   /* neutral glass card */
   .card.neutral{
@@ -159,11 +163,11 @@
       </div>
     </div>
 
-    <div class="card glow emerald">
+    <div class="card neutral">
       <div>
         <div class="icon-box">🔄</div>
-        <h3>ITC vs GSTR-2B Reconciliation Tool</h3>
-        <p>Builds a Purchase Register from Input Tax ledgers, splits out RCM/Import/Reversal/Cash-Payment entries, converts GSTR-2B (B2B/B2BA/CDNR/IMPG with amendments), then runs a 9-pass matching engine with a GSTIN-wise summary.</p>
+        <h3>ITC vs GSTR-2B Reconciliation Tool — Yearly</h3>
+        <p>For a full financial year, built from the Input Tax ledgers. Assembles a Purchase Register ledger by ledger, splits out RCM/Import/Reversal/Cash-Payment entries through a review round trip, converts GSTR-2B (B2B/B2BA/CDNR/IMPG with amendments), then runs a 9-pass matching engine with a GSTIN-wise summary.</p>
       </div>
       <div class="card-bottom">
         <span class="tag">GST</span>
@@ -180,6 +184,18 @@
       <div class="card-bottom">
         <span class="tag">GST</span>
         <a class="open-btn" href="GST_Annual_Reconciliation_Tool.html">Open Tool →</a>
+      </div>
+    </div>
+
+    <div class="card glow emerald wide">
+      <div class="card-inner">
+        <div class="icon-box">🗓️</div>
+        <h3>Monthly ITC Reconciliation — GSTR-2B vs Books</h3>
+        <p>One month at a time, straight from the Tally GSTR-3B voucher register. Matches it against the portal's GSTR-2B through the same 9-pass engine, ties the invoice-level register back to the 2B form summary as a control, and writes a ten-sheet working paper — including both registers, the GSTR-3B Table 4 working, and the credit reversal / re-claim statement. Unmatched items carry forward: upload last month's workbook and it resolves what has since appeared, ages what has not, and tracks the 4(B)(2) reversal until it is re-claimed under 4(D)(1).</p>
+      </div>
+      <div class="card-bottom">
+        <span class="tag">GST · Monthly</span>
+        <a class="open-btn" href="ITC_Monthly_Reconciliation_Tool.html">Open Tool →</a>
       </div>
     </div>
 
