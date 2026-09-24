@@ -1280,6 +1280,39 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:20},{width:14},{width:34}];
   }
 
+  // Sheet: Mismatch Detail — every MATCHED invoice whose PR and 2B tax disagree beyond tolerance,
+  // sorted by largest gap first. Matched Detail has all 700+ matched rows regardless of whether
+  // they agree; this is the one place to see just the line items that actually make up the
+  // Dashboard's Tax Mismatch / Monthly Summary Net Total figure, without hunting through the rest.
+  {
+    const ws = wb.addWorksheet('Mismatch Detail');
+    ws.addRow(['Mismatch Detail — Matched Invoices Where PR ≠ GSTR-2B']);
+    ws.addRow([`Every matched invoice (main + RCM cross-match) whose PR Tax and 2B Tax disagree by more than ₹${tol}, sorted by largest gap first. Rows marked Ineligible are already explained by GSTR-2B's own IS ELIGIBLE ITC = N flag and covered on the Ineligible ITC (Claimed) tab — they don't need separate chasing.`]);
+    ws.addRow([]);
+    const hdr = ws.addRow(['Date','Party (PR)','GSTIN','PR Inv No.','2B Inv No.','PR TV','2B TV','PR Tax','2B Tax','Tax Diff','Match Pass','2B Eligible ITC','Reason (if ineligible)']);
+    styleHeader(ws, hdr.number);
+    const mismatches = [...STATE.match.matched, ...STATE.match.rcmMatched]
+      .map(m=>({m, diff: round2(m.pr.TAX-m.tb.TAX)}))
+      .filter(x=>Math.abs(x.diff)>tol)
+      .sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+    mismatches.forEach(({m,diff})=>{
+      const ineligible = m.tb.eligible==='N';
+      const row = ws.addRow(['', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.tb.inv_raw, m.pr.TV, m.tb.TV, m.pr.TAX, m.tb.TAX, diff, m.pass, m.tb.eligible||'Y', ineligible?m.tb.reason:'']);
+      addDateCell(row,1,m.pr.date);
+      [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+      if(ineligible){
+        row.eachCell(cell=>{ cell.font = {italic:true, color:{argb:'FF888888'}}; });
+      } else {
+        row.eachCell(cell=>{ cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:REDLIGHT}}; });
+        row.getCell(10).font = {bold:true, color:{argb:RED}};
+      }
+    });
+    if(mismatches.length===0){
+      styleSub(ws.getCell(4,1), `No matched invoices disagree by more than ₹${tol} — every mismatch on the Dashboard/Monthly Summary comes from unmatched (ITC at Risk / Unclaimed ITC) rows instead, not from a matched invoice with a wrong amount.`);
+    }
+    ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:20},{width:14},{width:34}];
+  }
+
   // Sheets of concern — placed right after the Dashboard / Monthly Summary
   addMatchPairSheet('Ineligible ITC (Claimed)','Ineligible ITC — Claimed in Books','GSTR-2B marks these ineligible (IS ELIGIBLE ITC = N) but they are booked/matched in the Purchase Register — this ITC must be reversed.', ineligibleClaimed);
   addSoloSheet('ITC at Risk (PR Only)','ITC at Risk','In PR, not in 2B (post RCM cross-match)', STATE.match.prOnlyFinal);
