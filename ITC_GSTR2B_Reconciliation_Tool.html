@@ -1155,23 +1155,57 @@ document.getElementById('btnDownload').addEventListener('click', async function(
       r++;
     });
     const lastDataRow = r-1;
-    ws.getCell(r,1).value = 'Grand Total'; ws.getCell(r,1).font = {bold:true}; ws.getCell(r,1).border = thinBorder();
-    for(let c=2; c<=21; c++){
-      const colLetter = ws.getColumn(c).letter;
-      const tc = ws.getCell(r,c);
-      tc.value = {formula: `SUM(${colLetter}${firstDataRow}:${colLetter}${lastDataRow})`};
-      tc.numFmt = moneyFmt; tc.font = {bold:true}; tc.border = thinBorder();
+    // Grand Total must equal the TRUE full-population totals (same figures the Dashboard's Tax
+    // Mismatch card uses), not SUM(visible 12 months) — a matched invoice can have its OWN 2B
+    // filing date fall outside the PR-dominant FY window (e.g. a supplier's late-filed invoice)
+    // while the corresponding PR row is safely inside it; summing only the 12 visible month rows
+    // then silently drops that invoice's 2B-side contribution, making Grand Total disagree with
+    // the Dashboard even though both are built from the identical underlying data.
+    function sumAll(rows){
+      const t = {TV:0,I:0,C:0,S:0};
+      rows.forEach(x=>{ t.TV+=x.TV||0; t.I+=x.I||0; t.C+=x.C||0; t.S+=x.S||0; });
+      return t;
     }
+    const prAll = sumAll(STATE.prLines);
+    const tbAll = sumAll(tbPoolFull);
+    const tbEligibleAll = sumAll(tbPoolFull.filter(x=>x.eligible!=='N'));
+    const prAllIV = round2(prAll.TV+prAll.I+prAll.C+prAll.S);
+    const tbAllIV = round2(tbAll.TV+tbAll.I+tbAll.C+tbAll.S);
+    const tbEligibleAllIV = round2(tbEligibleAll.TV+tbEligibleAll.I+tbEligibleAll.C+tbEligibleAll.S);
+    const grandVals = [
+      round2(prAll.TV), round2(prAll.I), round2(prAll.C), round2(prAll.S), prAllIV,
+      round2(tbAll.TV), round2(tbAll.I), round2(tbAll.C), round2(tbAll.S), tbAllIV,
+      round2(prAll.TV-tbAll.TV), round2(prAll.I-tbAll.I), round2(prAll.C-tbAll.C), round2(prAll.S-tbAll.S), round2(prAllIV-tbAllIV),
+      round2(prAll.TV-tbEligibleAll.TV), round2(prAll.I-tbEligibleAll.I), round2(prAll.C-tbEligibleAll.C), round2(prAll.S-tbEligibleAll.S), round2(prAllIV-tbEligibleAllIV),
+    ];
+    ws.getCell(r,1).value = 'Grand Total'; ws.getCell(r,1).font = {bold:true}; ws.getCell(r,1).border = thinBorder();
+    grandVals.forEach((v,i)=>{
+      const tc = ws.getCell(r, i+2);
+      tc.value = v; tc.numFmt = moneyFmt; tc.font = {bold:true}; tc.border = thinBorder();
+    });
     r += 2;
     const inWindowYears = new Set(fyMonths.map(([y])=>y));
-    const outlierRows = STATE.prLines.filter(p=>{
+    const prOutliers = STATE.prLines.filter(p=>{
       if(!p.date) return false;
       const [y,m] = p.date.split('-').map(Number);
       return !inWindowYears.has(m>=4 ? y : y-1);
     });
-    if(outlierRows.length>0){
-      const outTV = round2(outlierRows.reduce((s,x)=>s+x.TV+x.I+x.C+x.S,0));
-      styleSub(ws.getCell(r,1), `Note: ${outlierRows.length} PR row(s) dated outside this FY window (TV+Tax ₹${outTV.toLocaleString('en-IN')}) are excluded from this table — check dates on those rows in Purchase Register (Final).`);
+    const tbOutliers = tbPoolFull.filter(t=>{
+      if(!t.date) return false;
+      const [y,m] = t.date.split('-').map(Number);
+      return !inWindowYears.has(m>=4 ? y : y-1);
+    });
+    const notes = [];
+    if(prOutliers.length>0){
+      const outTV = round2(prOutliers.reduce((s,x)=>s+x.TV+x.I+x.C+x.S,0));
+      notes.push(`${prOutliers.length} PR row(s) dated outside this FY window (TV+Tax ₹${outTV.toLocaleString('en-IN')}) don't appear on any visible month row above — check dates on those rows in Purchase Register (Final).`);
+    }
+    if(tbOutliers.length>0){
+      const outTV = round2(tbOutliers.reduce((s,x)=>s+x.TV+x.I+x.C+x.S,0));
+      notes.push(`${tbOutliers.length} GSTR-2B row(s) (₹${outTV.toLocaleString('en-IN')}) are dated outside this FY window — typically a supplier filing late into a different period — and don't appear on any visible month row above either.`);
+    }
+    if(notes.length>0){
+      styleSub(ws.getCell(r,1), `Note: ${notes.join(' ')} The Grand Total row is unaffected by this — it is always the true full-population total (matching the Dashboard), even for rows that fall outside the FY window shown month-by-month above.`);
       ws.getCell(r,1).font = {italic:true, color:{argb:RED}};
     } else {
       styleSub(ws.getCell(r,1), 'The Grand Total row above is the only figure that represents a genuine, unresolved reconciliation gap — itemised on the ITC at Risk, Unclaimed ITC and GSTIN Summary tabs (the "excl. Ineligible ITC" block is the one that actually needs chasing). Differences on individual month rows largely offset each other and do not need separate investigation.');
