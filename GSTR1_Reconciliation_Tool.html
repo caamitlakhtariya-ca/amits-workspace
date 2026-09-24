@@ -306,8 +306,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return cell.v;
   }
 
-  // Fixed (non-tax, non-taxable-component) columns present in every Tally Sales/CN/DN register export
-  var FIXED_COLS = ['DATE', 'PARTICULARS', 'VOUCHER TYPE', 'VOUCHER NO.', 'GSTIN/UIN', 'VALUE', 'GROSS TOTAL'];
+  // Fixed (non-tax, non-taxable-component) columns present in every Tally Sales/CN/DN register export.
+  // 'VOUCHER REF. NO.' is included here too since it's always a text reference field, never a ledger
+  // amount — whether it holds this row's own invoice number (see vnoCol's fallback below, for
+  // registers with no 'Voucher No.' column at all) or, on a Credit Note, a reference back to a
+  // different, original invoice.
+  var FIXED_COLS = ['DATE', 'PARTICULARS', 'VOUCHER TYPE', 'VOUCHER NO.', 'VOUCHER REF. NO.', 'GSTIN/UIN', 'VALUE', 'GROSS TOTAL'];
 
   // Find header row: first row (within first 15) containing both 'Date' and 'Particulars'
   function findTallyHeaderRow(ws, range) {
@@ -361,7 +365,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     var dateCol = colByName['DATE'];
     var particularsCol = colByName['PARTICULARS'];
     var vtypeCol = colByName['VOUCHER TYPE'];
+    // Some registers carry the actual invoice number under 'Voucher Ref. No.' instead of 'Voucher
+    // No.' (e.g. a services company invoicing by a custom numbering series) — with no 'Voucher No.'
+    // column present at all, previously every Bill No came through blank and nothing could ever match
+    // against GSTR-1. Only fall back when the primary column is entirely absent from this register;
+    // when both exist (e.g. a Credit Note's own number alongside a reference to the original invoice
+    // it's crediting), 'Voucher No.' is still preferred and 'Voucher Ref. No.' is left alone.
     var vnoCol = colByName['VOUCHER NO.'];
+    if (vnoCol === undefined) vnoCol = colByName['VOUCHER REF. NO.'];
     var gstinCol = colByName['GSTIN/UIN'];
     var grossTotalCol = colByName['GROSS TOTAL'];
 
