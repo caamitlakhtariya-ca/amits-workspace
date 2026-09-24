@@ -79,9 +79,18 @@
 </header>
 <div class="wrap">
 
-  <!-- STEP 1: Upload ledgers -->
+  <!-- STEP 1: GSTR-2B upload -->
   <div class="card" id="step1">
-    <h2><span class="step-num">1</span> Upload Input Tax Ledger files</h2>
+    <h2><span class="step-num">1</span> Upload GSTR-2B export</h2>
+    <p class="sub">Government portal export with tabs B2B / B2BA / CDNR / CDNRA / IMPG (header row 10, data from row 11). RCM invoices are split out automatically via the Reverse Charge column.</p>
+    <input type="file" id="gstr2bInput" accept=".xlsx,.xls">
+    <div id="gstr2bStats" class="stat-grid" style="margin-top:14px;"></div>
+    <div id="gstr2bErrors"></div>
+  </div>
+
+  <!-- STEP 2: Upload ledgers -->
+  <div class="card disabled" id="step2">
+    <h2><span class="step-num">2</span> Upload Input Tax Ledger files</h2>
     <p class="sub">Upload each rate-ledger export separately (Input CGST@6%, @9%, @2.5%, IGST@18% etc.). Header row must be exactly Row 13 (Date / Particulars) — files that don't match will be rejected with a clear reason, not silently misread.</p>
     <input type="file" id="ledgerInput" multiple accept=".xlsx,.xls">
     <ul class="filelist" id="ledgerFileList"></ul>
@@ -91,9 +100,9 @@
     </div>
   </div>
 
-  <!-- STEP 2: Confirm tax ledgers -->
-  <div class="card disabled" id="step2">
-    <h2><span class="step-num">2</span> Confirm which columns are Tax Ledgers</h2>
+  <!-- STEP 3: Confirm tax ledgers -->
+  <div class="card disabled" id="step3">
+    <h2><span class="step-num">3</span> Confirm which columns are Tax Ledgers</h2>
     <p class="sub">Auto-detected suggestions are pre-selected (based on column name). Please review and correct before continuing — this avoids the classification confusion seen with auto-guessing.</p>
     <div class="tbl-scroll"><table id="taxColTable"><thead><tr><th>Column Name</th><th>Appears in # files</th><th>Classification</th></tr></thead><tbody></tbody></table></div>
     <div style="margin-top:14px;">
@@ -101,9 +110,9 @@
     </div>
   </div>
 
-  <!-- STEP 3: PR + Needs Review -->
-  <div class="card disabled" id="step3">
-    <h2><span class="step-num">3</span> Purchase Register &amp; Needs Review</h2>
+  <!-- STEP 4: PR + Needs Review -->
+  <div class="card disabled" id="step4">
+    <h2><span class="step-num">4</span> Purchase Register &amp; Needs Review</h2>
     <div class="stat-grid" id="prStats"></div>
     <div id="reviewSection" style="margin-top:18px;"></div>
     <div class="flexrow" style="margin-top:14px;">
@@ -117,15 +126,6 @@
     <div style="margin-top:14px;">
       <button id="btnApplyReview" disabled>Apply Classifications &amp; Continue</button>
     </div>
-  </div>
-
-  <!-- STEP 4: GSTR-2B upload -->
-  <div class="card disabled" id="step4">
-    <h2><span class="step-num">4</span> Upload GSTR-2B export</h2>
-    <p class="sub">Government portal export with tabs B2B / B2BA / CDNR / CDNRA / IMPG (header row 10, data from row 11). RCM invoices are split out automatically via the Reverse Charge column.</p>
-    <input type="file" id="gstr2bInput" accept=".xlsx,.xls">
-    <div id="gstr2bStats" class="stat-grid" style="margin-top:14px;"></div>
-    <div id="gstr2bErrors"></div>
   </div>
 
   <!-- STEP 5: Matching engine -->
@@ -233,7 +233,7 @@ function classifyColName(name){
   return {cls:'EXPENSE'};
 }
 
-/* ---------------- STEP 1: file upload + header validation ---------------- */
+/* ---------------- STEP 2: ledger file upload + header validation ---------------- */
 document.getElementById('ledgerInput').addEventListener('change', function(e){
   for(const f of e.target.files){
     const reader = new FileReader();
@@ -382,7 +382,7 @@ document.getElementById('btnParseLedgers').addEventListener('click', function(){
     tbody.appendChild(tr);
   });
 
-  document.getElementById('step2').classList.remove('disabled');
+  document.getElementById('step3').classList.remove('disabled');
   document.getElementById('btnConfirmTax').disabled = false;
   } catch(err){
     errBox.innerHTML += `<div class="errbox">Unexpected error while parsing: ${err.message}. Open the browser console (F12) for details.</div>`;
@@ -406,7 +406,7 @@ document.getElementById('btnConfirmTax').addEventListener('click', function(){
   setTimeout(function(){
     try {
       parseAllLedgers();
-      document.getElementById('step3').classList.remove('disabled');
+      document.getElementById('step4').classList.remove('disabled');
     } catch(err){
       alert('Unexpected error while building the Purchase Register: ' + err.message + '. Open the browser console (F12) for details.');
       console.error('parseAllLedgers failed:', err);
@@ -417,7 +417,7 @@ document.getElementById('btnConfirmTax').addEventListener('click', function(){
   }, 20);
 });
 
-/* ---------------- STEP 3: parse rows, dedupe, needs-review ---------------- */
+/* ---------------- STEP 4: parse rows, dedupe, needs-review ---------------- */
 function parseAllLedgers(){
   STATE.allRows = [];
   STATE.files.forEach(f=>{
@@ -660,10 +660,10 @@ document.getElementById('btnApplyReview').addEventListener('click', function(){
   });
 
   renderPRStats();
-  document.getElementById('step4').classList.remove('disabled');
+  document.getElementById('step5').classList.remove('disabled');
 });
 
-/* ---------------- STEP 4: GSTR-2B parsing ---------------- */
+/* ---------------- STEP 1: GSTR-2B parsing ---------------- */
 document.getElementById('gstr2bInput').addEventListener('change', function(e){
   const f = e.target.files[0];
   if(!f) return;
@@ -751,7 +751,7 @@ function parse2B(wb){
   document.getElementById('gstr2bStats').innerHTML = stats.map(([lbl,num])=>
     `<div class="stat"><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`).join('');
 
-  document.getElementById('step5').classList.remove('disabled');
+  document.getElementById('step2').classList.remove('disabled');
 }
 
 /* ---------------- STEP 5: Matching engine ---------------- */
@@ -1080,6 +1080,48 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     d.addConditionalFormatting({ref:`C${catFirst}:C${rr-1}`, rules:[{type:'dataBar', gradient:false, border:false, color:{argb:TEAL}, cfvo:[{type:'min'},{type:'max'}]}]});
 
     d.columns = [{width:3},{width:32},{width:16},{width:16},{width:16}];
+  }
+
+  // Sheet: Tax Reconciliation Summary — standalone, printable version of the Dashboard's
+  // Tax-Head Comparison table (same figures, same tie-out), for sharing without the full Dashboard.
+  {
+    const ws = wb.addWorksheet('Tax Reconciliation Summary');
+    styleTitle(ws.getCell('A1'), 'Tax Reconciliation Summary: Books (PR) vs GSTR-2B');
+    styleSub(ws.getCell('A2'), `Same totals as the Dashboard's Tax-Head Comparison card. Line items behind the Diff column are on the Mismatch Detail tab (Matched-but-disagreeing, RCM Cross-Match, ITC at Risk, Unclaimed ITC — all four add up to the Total row below).`);
+    function sumBy2(rows, key){ return rows.reduce((a,x)=>a+(x[key]||0),0); }
+    const prTV2=sumBy2(STATE.prLines,'TV'), prI2=sumBy2(STATE.prLines,'I'), prC2=sumBy2(STATE.prLines,'C'), prS2=sumBy2(STATE.prLines,'S');
+    const tbTV2=sumBy2(tbPoolFull,'TV'), tbI2=sumBy2(tbPoolFull,'I'), tbC2=sumBy2(tbPoolFull,'C'), tbS2=sumBy2(tbPoolFull,'S');
+    const prIV2 = round2(prTV2+prI2+prC2+prS2), tbIV2 = round2(tbTV2+tbI2+tbC2+tbS2);
+    const hdr = ws.addRow(['Head','Books (PR)','GSTR-2B','Diff']);
+    styleHeader(ws, hdr.number);
+    const rowsData = [
+      ['Taxable Value', prTV2, tbTV2],
+      ['IGST', prI2, tbI2],
+      ['CGST', prC2, tbC2],
+      ['SGST', prS2, tbS2],
+      ['Invoice Value', prIV2, tbIV2],
+    ];
+    let rr = hdr.number+1; const first = rr;
+    rowsData.forEach(([label, pr, tb])=>{
+      const row = ws.addRow([label, round2(pr), round2(tb), round2(pr-tb)]);
+      [2,3,4].forEach(c=>{ row.getCell(c).numFmt = moneyFmt; row.getCell(c).border = thinBorder(); });
+      row.getCell(1).border = thinBorder();
+      if(Math.abs(round2(pr-tb))>tol){
+        row.getCell(4).fill = {type:'pattern',pattern:'solid',fgColor:{argb:REDLIGHT}};
+        row.getCell(4).font = {bold:true, color:{argb:RED}};
+      }
+      rr++;
+    });
+    const last = rr-1;
+    const totalRow = ws.addRow(['Total (Tax: IGST+CGST+SGST)',
+      {formula:`B${first+1}+B${first+2}+B${first+3}`},
+      {formula:`C${first+1}+C${first+2}+C${first+3}`},
+      {formula:`D${first+1}+D${first+2}+D${first+3}`}]);
+    totalRow.eachCell(cell=>{ cell.font = {bold:true}; cell.border = thinBorder(); });
+    [2,3,4].forEach(c=>totalRow.getCell(c).numFmt=moneyFmt);
+    totalRow.getCell(4).fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFE2F0D9'}};
+    ws.columns = [{width:24},{width:18},{width:18},{width:16}];
+    ws.views = [{showGridLines:false}];
   }
 
   // Sheet: Monthly Summary of ITC (FY Apr-Mar ordered) — Books (PR) vs GSTR-2B, with difference
