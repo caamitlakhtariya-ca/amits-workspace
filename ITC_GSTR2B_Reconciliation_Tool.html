@@ -1276,25 +1276,39 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:20},{width:14},{width:34}];
   }
 
-  // Sheet: Mismatch Detail — every MATCHED invoice whose PR and 2B tax disagree beyond tolerance,
-  // sorted by largest gap first. Matched Detail has all 700+ matched rows regardless of whether
-  // they agree; this is the one place to see just the line items that actually make up the
-  // Dashboard's Tax Mismatch / Monthly Summary Net Total figure, without hunting through the rest.
+  // Sheet: Mismatch Detail — EVERY line item that contributes to the Dashboard's Tax Mismatch /
+  // Monthly Summary Net Total figure, in one place, each row showing exactly what it contributes
+  // to the (PR - 2B) diff per tax head. Four categories, since all four genuinely contribute:
+  //  1) Matched (main pool) invoices where PR and 2B tax disagree — itemised above the tolerance,
+  //     bucketed below it (Match Detail has 700+ rows regardless of agreement; a paisa-level
+  //     rounding diff on each of those doesn't deserve its own row, but omitting it entirely would
+  //     make this sheet's total quietly stop tying to the Dashboard).
+  //  2) RCM cross-match — PR rows that matched GSTR-2B's RCM section, not the main B2B/CDNR pool.
+  //     The Dashboard's 2B total (tbPoolFull) never includes the RCM section at all, so these rows'
+  //     PR tax stays fully uncancelled in the diff, same as ITC at Risk.
+  //  3) ITC at Risk (in PR, not in 2B) — the PR side alone; 2B contributes nothing, so it ADDS to Diff.
+  //  4) Unclaimed ITC (in 2B, not in PR) — the 2B side alone; PR contributes nothing, so it SUBTRACTS.
+  // Every row's TV/IGST/CGST/SGST/Tax columns are that row's signed CONTRIBUTION to the diff (not
+  // its raw PR or 2B amount) — summing any column reconstructs the matching head-wise figure on the
+  // Dashboard's Tax-Head Comparison table directly, so the line items behind that number are never
+  // more than one sort-by-column away.
   {
     const ws = wb.addWorksheet('Mismatch Detail');
-    ws.addRow(['Mismatch Detail — Matched Invoices Where PR ≠ GSTR-2B']);
-    ws.addRow([`Every matched invoice (main + RCM cross-match) whose PR Tax and 2B Tax disagree by more than ₹${tol}, sorted by largest gap first. Rows marked Ineligible are already explained by GSTR-2B's own IS ELIGIBLE ITC = N flag and covered on the Ineligible ITC (Claimed) tab — they don't need separate chasing.`]);
+    ws.addRow(['Mismatch Detail — Every Line Item Behind the Tax Mismatch Figure']);
+    ws.addRow([`Each row's TV/IGST/CGST/SGST/Tax Diff columns are that line item's own signed contribution to (PR - GSTR-2B) — add them up and you get the Dashboard's Tax Mismatch exactly. Rows marked Ineligible are already explained by GSTR-2B's own IS ELIGIBLE ITC = N flag (covered on the Ineligible ITC (Claimed) tab) and don't need separate chasing.`]);
     ws.addRow([]);
-    const hdr = ws.addRow(['Date','Party (PR)','GSTIN','PR Inv No.','2B Inv No.','PR TV','2B TV','PR Tax','2B Tax','Tax Diff','Match Pass','2B Eligible ITC','Reason (if ineligible)']);
+    const hdr = ws.addRow(['Date','Party','GSTIN','PR Inv No.','2B Inv No.','TV Diff','IGST Diff','CGST Diff','SGST Diff','Tax Diff','Category','Reason (if ineligible)']);
     styleHeader(ws, hdr.number);
-    const mismatches = [...STATE.match.matched, ...STATE.match.rcmMatched]
-      .map(m=>({m, diff: round2(m.pr.TAX-m.tb.TAX)}))
-      .filter(x=>Math.abs(x.diff)>tol)
-      .sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
-    mismatches.forEach(({m,diff})=>{
-      const ineligible = m.tb.eligible==='N';
-      const row = ws.addRow(['', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.tb.inv_raw, m.pr.TV, m.tb.TV, m.pr.TAX, m.tb.TAX, diff, m.pass, m.tb.eligible||'Y', ineligible?m.tb.reason:'']);
-      addDateCell(row,1,m.pr.date);
+
+    function sectionHeader(label, color){
+      const row = ws.addRow([label]);
+      ws.mergeCells(row.number,1,row.number,12);
+      row.getCell(1).font = {bold:true, color:{argb:WHITE}};
+      row.getCell(1).fill = {type:'pattern',pattern:'solid',fgColor:{argb:color}};
+    }
+    function dataRow(date, party, gstin, prInv, tbInv, tv, ig, cg, sg, tax, category, ineligible, reason){
+      const row = ws.addRow(['', party, gstin, prInv, tbInv, round2(tv), round2(ig), round2(cg), round2(sg), round2(tax), category, ineligible?reason:'']);
+      addDateCell(row,1,date);
       [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
       if(ineligible){
         row.eachCell(cell=>{ cell.font = {italic:true, color:{argb:'FF888888'}}; });
@@ -1302,11 +1316,64 @@ document.getElementById('btnDownload').addEventListener('click', async function(
         row.eachCell(cell=>{ cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:REDLIGHT}}; });
         row.getCell(10).font = {bold:true, color:{argb:RED}};
       }
-    });
-    if(mismatches.length===0){
-      styleSub(ws.getCell(4,1), `No matched invoices disagree by more than ₹${tol} — every mismatch on the Dashboard/Monthly Summary comes from unmatched (ITC at Risk / Unclaimed ITC) rows instead, not from a matched invoice with a wrong amount.`);
+      return row;
     }
-    ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:20},{width:14},{width:34}];
+    function subtotalRow(label, rows){
+      const row = ws.addRow([label]);
+      row.getCell(1).font = {bold:true};
+      [6,7,8,9,10].forEach(c=>{
+        const total = rows.reduce((s,r)=>s+(r.getCell(c).value||0),0);
+        const tc = row.getCell(c); tc.value = round2(total); tc.numFmt = moneyFmt; tc.font = {bold:true};
+      });
+      return row;
+    }
+
+    // 1. Matched (main pool) — itemise diffs beyond tolerance, bucket the rest so nothing is dropped.
+    const matchedDiffs = STATE.match.matched.map(m=>({m, diff: round2(m.pr.TAX-m.tb.TAX)}));
+    const bigMismatches = matchedDiffs.filter(x=>Math.abs(x.diff)>tol).sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+    const smallMismatches = matchedDiffs.filter(x=>Math.abs(x.diff)>0 && Math.abs(x.diff)<=tol);
+    sectionHeader(`1. Matched — PR and GSTR-2B Tax Disagree (${bigMismatches.length})`, ORANGE);
+    const section1Rows = bigMismatches.map(({m,diff})=>dataRow(m.pr.date, m.pr.party, m.pr.gstin, m.pr.inv_raw, m.tb.inv_raw,
+      m.pr.TV-m.tb.TV, m.pr.I-m.tb.I, m.pr.C-m.tb.C, m.pr.S-m.tb.S, diff, m.pass, m.tb.eligible==='N', m.tb.reason));
+    if(smallMismatches.length>0){
+      const tv=smallMismatches.reduce((s,x)=>s+(x.m.pr.TV-x.m.tb.TV),0), ig=smallMismatches.reduce((s,x)=>s+(x.m.pr.I-x.m.tb.I),0),
+            cg=smallMismatches.reduce((s,x)=>s+(x.m.pr.C-x.m.tb.C),0), sg=smallMismatches.reduce((s,x)=>s+(x.m.pr.S-x.m.tb.S),0),
+            tax=smallMismatches.reduce((s,x)=>s+x.diff,0);
+      const row = ws.addRow(['', `Rounding / below-tolerance differences (${smallMismatches.length} matched invoices, each ≤ ₹${tol})`, '', '', '', round2(tv), round2(ig), round2(cg), round2(sg), round2(tax), 'Matched (rounding)', '']);
+      [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+      row.eachCell(cell=>{ cell.font = {italic:true}; });
+      section1Rows.push(row);
+    }
+    if(section1Rows.length===0) styleSub(ws.addRow([]).getCell(1), 'No matched invoices disagree — every matched pair agrees exactly.');
+    if(section1Rows.length>0) subtotalRow('Subtotal (1)', section1Rows);
+
+    // 2. RCM cross-match — the 2B side is from the RCM section, never part of the Dashboard's 2B total.
+    sectionHeader(`2. RCM Cross-Match — PR Matched to GSTR-2B's RCM Section (${STATE.match.rcmMatched.length}) — PR side adds to the diff`, TEAL);
+    const section2Rows = STATE.match.rcmMatched.map(m=>dataRow(m.pr.date, m.pr.party, m.pr.gstin, m.pr.inv_raw, m.tb.inv_raw, m.pr.TV, m.pr.I, m.pr.C, m.pr.S, m.pr.TAX, 'RCM Cross-Match', false, ''));
+    if(section2Rows.length===0) styleSub(ws.addRow([]).getCell(1), 'No RCM cross-matches.');
+    if(section2Rows.length>0) subtotalRow('Subtotal (2)', section2Rows);
+
+    // 3. ITC at Risk — PR only.
+    const riskSorted = STATE.match.prOnlyFinal.slice().sort((a,b)=>Math.abs(b.TAX)-Math.abs(a.TAX));
+    sectionHeader(`3. ITC at Risk — In Books, Not in GSTR-2B (${riskSorted.length}) — adds to the diff`, RED);
+    const section3Rows = riskSorted.map(p=>dataRow(p.date, p.party, p.gstin, p.inv_raw, '', p.TV, p.I, p.C, p.S, p.TAX, 'ITC at Risk', false, ''));
+    if(section3Rows.length===0) styleSub(ws.addRow([]).getCell(1), 'No PR-only unmatched rows.');
+    if(section3Rows.length>0) subtotalRow('Subtotal (3)', section3Rows);
+
+    // 4. Unclaimed ITC — 2B only.
+    const unclaimedSorted = STATE.match.tbOnly.slice().sort((a,b)=>Math.abs(b.TAX)-Math.abs(a.TAX));
+    sectionHeader(`4. Unclaimed ITC — In GSTR-2B, Not in Books (${unclaimedSorted.length}) — subtracts from the diff`, GOLD);
+    const section4Rows = unclaimedSorted.map(t=>dataRow(t.date, t.party, t.gstin, '', t.inv_raw, -t.TV, -t.I, -t.C, -t.S, -t.TAX,
+      t.eligible==='N'?'Unclaimed ITC (Ineligible — no action)':'Unclaimed ITC', t.eligible==='N', t.reason));
+    if(section4Rows.length===0) styleSub(ws.addRow([]).getCell(1), 'No 2B-only unmatched rows.');
+    if(section4Rows.length>0) subtotalRow('Subtotal (4)', section4Rows);
+
+    const grandRow = subtotalRow('Grand Total (ties to Dashboard Tax Mismatch)', [...section1Rows, ...section2Rows, ...section3Rows, ...section4Rows]);
+    grandRow.getCell(1).font = {bold:true, color:{argb:WHITE}};
+    grandRow.eachCell(cell=>{ if(!cell.fill || !cell.fill.fgColor) cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:NAVY}}; cell.font = {...cell.font, color:{argb:WHITE}}; });
+
+    ws.columns = [{width:13},{width:26},{width:17},{width:16},{width:16},{width:12},{width:12},{width:11},{width:11},{width:11},{width:34},{width:34}];
+    ws.views = [{state:'frozen', xSplit:1, ySplit:hdr.number, showGridLines:false}];
   }
 
   // Sheets of concern — placed right after the Dashboard / Monthly Summary
