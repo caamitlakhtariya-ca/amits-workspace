@@ -1003,6 +1003,8 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     const tbI2=sumBy(tbEligibleOnly,'I'), tbC2=sumBy(tbEligibleOnly,'C'), tbS2=sumBy(tbEligibleOnly,'S');
     const taxDiffExclIneligible = (prI+prC+prS) - (tbI2+tbC2+tbS2);
 
+    const duplicateVouchers = STATE.prLines.filter(p=>p.n_copies>1);
+
     const cards = [
       {label: Math.abs(taxDiff)<=tol ? 'TAX MATCH' : 'TAX MISMATCH', val: Math.abs(taxDiff)<=tol ? 'NIL DIFF' : ('₹'+Math.round(taxDiff).toLocaleString('en-IN')), color: Math.abs(taxDiff)<=tol ? GREEN : RED},
       {label: Math.abs(taxDiffExclIneligible)<=tol ? 'TAX MATCH (EXCL. INELIGIBLE)' : 'MISMATCH (EXCL. INELIGIBLE)', val: Math.abs(taxDiffExclIneligible)<=tol ? 'NIL DIFF' : ('₹'+Math.round(taxDiffExclIneligible).toLocaleString('en-IN')), color: Math.abs(taxDiffExclIneligible)<=tol ? GREEN : RED},
@@ -1011,6 +1013,7 @@ document.getElementById('btnDownload').addEventListener('click', async function(
       {label:'ITC AT RISK (PR ONLY)', val:String(STATE.match.prOnlyFinal.length), color: STATE.match.prOnlyFinal.length ? RED : GREEN},
       {label:'UNCLAIMED ITC (2B ONLY)', val:String(STATE.match.tbOnly.length), color: STATE.match.tbOnly.length ? RED : GREEN},
       {label:'RCM NOT BOOKED', val:String(STATE.match.rcm2bUnmatched.length), color: STATE.match.rcm2bUnmatched.length ? GOLD : GREEN},
+      {label:'DUPLICATE VOUCHERS (BOOKS)', val:String(duplicateVouchers.length), color: duplicateVouchers.length ? GOLD : GREEN},
     ];
     let col = 2;
     cards.forEach(card=>{
@@ -1469,6 +1472,44 @@ document.getElementById('btnDownload').addEventListener('click', async function(
       [6,7,8,9,10].forEach(c=>row.getCell(c).numFmt=moneyFmt);
     });
     ws.columns = [{width:13},{width:26},{width:17},{width:20},{width:16},{width:12},{width:10},{width:10},{width:10},{width:13},{width:26}];
+  }
+
+  // Sheet: Duplicate Vouchers (Books) — every invoice the tool found entered more than once across
+  // the uploaded ledgers (n_copies>1). GSTR-2B, the Purchase Register and every ITC figure downstream
+  // already correctly count it ONCE — that part needs no fix. But the EXTRA posting(s) still sit in
+  // Tally: they overstate the party's ledger balance by the full invoice value each time, and (per a
+  // real client case) can hide behind a Duties & Taxes ledger balance that otherwise looks unexplained.
+  // Surfacing this list is what lets someone go delete the duplicate voucher(s) in the books.
+  {
+    const ws = wb.addWorksheet('Duplicate Vouchers (Books)');
+    ws.addRow(['Duplicate Vouchers Found in Books — Action Required in Tally']);
+    ws.addRow(['Same GSTIN + Voucher Type + Voucher No. + Date (or, when Voucher No. is blank, the same date/party/amount) found more than once across the uploaded ledgers. The reconciliation already counts each of these ONCE, matching GSTR-2B — no ITC/tax figure here is wrong. But the extra posting(s) are still sitting in Tally, overstating that party\'s ledger balance by the invoice value each time. Verify and delete the extra voucher(s) in the books, then redo any year-end set-off entry.']);
+    ws.addRow([]);
+    const hdr = ws.addRow(['Date','Party','GSTIN','Voucher Type','Voucher No.','TV','IGST','CGST','SGST','Invoice Value','Times Entered in Books','Extra Postings (n-1)','Party Balance Overstated By','Source File(s)']);
+    styleHeader(ws, hdr.number);
+    const dupeVouchers = STATE.prLines.filter(p=>p.n_copies>1)
+      .slice()
+      .sort((a,b)=> Math.abs(b.TV+b.I+b.C+b.S)*(b.n_copies-1) - Math.abs(a.TV+a.I+a.C+a.S)*(a.n_copies-1));
+    let overstatedTotal = 0;
+    dupeVouchers.forEach(p=>{
+      const iv = round2(p.TV+p.I+p.C+p.S);
+      const overstated = round2(iv*(p.n_copies-1));
+      overstatedTotal += overstated;
+      const row = ws.addRow(['', p.party, p.gstin, p.voucher_type, p.voucher_no, p.TV, p.I, p.C, p.S, iv, p.n_copies, p.n_copies-1, overstated, p.source_files]);
+      addDateCell(row,1,p.date);
+      [6,7,8,9,10,13].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+      row.eachCell(cell=>{ cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:REDLIGHT}}; });
+      row.getCell(11).font = {bold:true, color:{argb:RED}};
+    });
+    if(dupeVouchers.length===0){
+      styleSub(ws.getCell(4,1), 'No repeated vouchers found across the uploaded ledgers — nothing to action here.');
+    } else {
+      const totalRow = ws.addRow(['','','','','','','','','','','','Total party balance overstated in books', round2(overstatedTotal),'']);
+      totalRow.getCell(12).font = {bold:true};
+      totalRow.getCell(13).font = {bold:true}; totalRow.getCell(13).numFmt = moneyFmt;
+    }
+    ws.columns = [{width:13},{width:26},{width:17},{width:20},{width:16},{width:12},{width:10},{width:10},{width:10},{width:13},{width:13},{width:13},{width:18},{width:26}];
+    ws.views = [{state:'frozen', xSplit:1, ySplit:hdr.number, showGridLines:false}];
   }
 
   // Sheet: GSTR-2B Register — every invoice as filed by suppliers, matched or not (mirrors Purchase Register (Final))
