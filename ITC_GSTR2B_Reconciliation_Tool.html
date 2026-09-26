@@ -849,15 +849,42 @@ function runPasses(prItems, tbItems, tol){
   }
 
   runExact('P1: GSTIN+InvNo', x=>[x.gstin, x.inv_norm]);
-  runTol('P3: GSTIN+Date+Tax', x=>[x.gstin, x.date], x=>x.TAX);
   runExact('P4: PAN+InvNo', x=>[x.pan, x.inv_norm]);
+
+  // A PR row whose invoice number was already exact-matched to GSTR-2B under
+  // P1/P4 (via a DIFFERENT posting of the same invoice no.) is a duplicate or
+  // mis-dated booking, not a genuine gap. Pull it out here, before the
+  // amount-tolerance passes run, so it can't silently absorb an unrelated
+  // GSTR-2B invoice just because the amount happens to fall within tolerance
+  // (e.g. recurring near-identical invoice amounts from the same vendor).
+  const matchedGstinInv = new Set();
+  const matchedPanInv = new Set();
+  matched.forEach(m=>{
+    if(m.pass==='P1: GSTIN+InvNo') matchedGstinInv.add(JSON.stringify([m.pr.gstin, m.pr.inv_norm]));
+    if(m.pass==='P4: PAN+InvNo') matchedPanInv.add(JSON.stringify([m.pr.pan, m.pr.inv_norm]));
+  });
+  const orphanedDupInvoices = [];
+  Object.keys(prRemaining).forEach(pid=>{
+    const p = prRemaining[pid];
+    if(!p.inv_norm) return;
+    const isDup = matchedGstinInv.has(JSON.stringify([p.gstin, p.inv_norm])) ||
+                  matchedPanInv.has(JSON.stringify([p.pan, p.inv_norm]));
+    if(isDup){
+      p._dupInvoiceNo = true;
+      orphanedDupInvoices.push(p);
+      delete prRemaining[pid];
+    }
+  });
+
+  runTol('P3: GSTIN+Date+Tax', x=>[x.gstin, x.date], x=>x.TAX);
   runTol('P5: GSTIN+TV', x=>[x.gstin], x=>x.TV);
   runTol('P6: GSTIN+Tax', x=>[x.gstin], x=>x.TAX);
   runTol('P7: PAN+Tax', x=>[x.pan], x=>x.TAX);
   runTol('P8: GSTIN+IV', x=>[x.gstin], x=>x.IV);
   runTol('P9: PAN+TV', x=>[x.pan], x=>x.TV);
 
-  return {matched, prOnly:Object.values(prRemaining), tbOnly:Object.values(tbRemaining), passCounts};
+  const prOnly = Object.values(prRemaining).concat(orphanedDupInvoices);
+  return {matched, prOnly, tbOnly:Object.values(tbRemaining), passCounts};
 }
 
 document.getElementById('btnRunMatch').addEventListener('click', function(){
@@ -1296,22 +1323,27 @@ document.getElementById('btnDownload').addEventListener('click', async function(
     ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
     const headers = ['Date','Party','GSTIN','Invoice No.','TV','I','C','S','TAX'];
     if(withEligibility) headers.push('2B Eligible ITC','Reason (per GSTR-2B)','Status');
+    headers.push('Remarks');
     const hdr = ws.addRow(headers);
     styleHeader(ws, hdr.number);
     rows.forEach(r=>{
       const ineligible = withEligibility && r.eligible==='N';
       const vals = ['', r.party, r.gstin, r.inv_raw, r.TV, r.I, r.C, r.S, r.TAX];
       if(withEligibility) vals.push(r.eligible||'Y', ineligible?r.reason:'', ineligible ? 'Ineligible — no action needed' : 'Genuine gap — review');
+      vals.push(r._dupInvoiceNo ? 'Possible duplicate/erroneous posting — same invoice no. already matched to 2B under another date; verify this posting in books before treating as a genuine gap' : '');
       const row = ws.addRow(vals);
       addDateCell(row,1,r.date);
       [5,6,7,8,9].forEach(c=>row.getCell(c).numFmt=moneyFmt);
       if(ineligible){
         row.eachCell(cell=>{ cell.font = {italic:true, color:{argb:'FF888888'}}; });
       }
+      if(r._dupInvoiceNo){
+        row.eachCell(cell=>{ cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:REDLIGHT}}; });
+      }
     });
     ws.columns = withEligibility
-      ? [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12},{width:14},{width:34},{width:26}]
-      : [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12}];
+      ? [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12},{width:14},{width:34},{width:26},{width:44}]
+      : [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12},{width:44}];
   }
   function addMatchPairSheet(name, title, subtitle, pairs){
     const ws = wb.addWorksheet(name);
