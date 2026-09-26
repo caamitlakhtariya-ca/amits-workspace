@@ -464,6 +464,12 @@ function parseAllLedgers(){
       // reversal; flip it positive to match GSTR-2B's convention.
       if(!f.anyDrCrTag && !/credit/i.test(vtypeS) && (TV+I+C+S) < 0){ TV=-TV; I=-I; C=-C; S=-S; }
       const dateISO = toISO(dateRaw);
+      // `ref` is a content-only signature (date+party+amount) used to dedupe genuinely repeated
+      // rows across DIFFERENT ledger files when Voucher No. is blank. `row_key` additionally
+      // prefixes the source file name — needed so the Needs-Review round-trip can address each raw
+      // row individually — but that file-name prefix must never leak into the dedupe key itself, or
+      // the exact same invoice entered in two ledger exports would never collide (each file's row
+      // gets its own unique row_key purely because the file names differ) and both copies survive.
       const ref = (vno!==undefined && vno!==null && String(vno).trim()!=='') ? vno : `SYN|${dateISO}|${partyS}|${(TV+I+C+S).toFixed(2)}`;
       const rowKey = `${f.name}|${dateISO}|${vtypeS}|${ref}`;
 
@@ -472,7 +478,7 @@ function parseAllLedgers(){
 
       STATE.allRows.push({
         source_file: f.name, date: dateISO, party: partyS, gstin: gstinS,
-        voucher_type: vtypeS, voucher_no: vno!==undefined?String(vno):'', row_key: rowKey,
+        voucher_type: vtypeS, voucher_no: vno!==undefined?String(vno):'', row_key: rowKey, dedupe_ref: ref,
         TV: round2(TV), I: round2(I), C: round2(C), S: round2(S),
         needs_review: !gstinS, suggested_category: suggested
       });
@@ -482,10 +488,10 @@ function parseAllLedgers(){
   const gstinPresent = STATE.allRows.filter(r=>!r.needs_review);
   STATE.reviewRows = STATE.allRows.filter(r=>r.needs_review);
 
-  // dedupe gstin-present rows: key = gstin|voucherType|voucherNo(or ref)|date
+  // dedupe gstin-present rows: key = gstin|voucherType|voucherNo(or content-only ref)|date
   const groups = {};
   gstinPresent.forEach(r=>{
-    const key = `${normGSTIN(r.gstin)}|${r.voucher_type}|${r.voucher_no||r.row_key}|${r.date}`;
+    const key = `${normGSTIN(r.gstin)}|${r.voucher_type}|${r.voucher_no||r.dedupe_ref}|${r.date}`;
     if(!groups[key]) groups[key] = [];
     groups[key].push(r);
   });
@@ -649,7 +655,7 @@ document.getElementById('btnApplyReview').addEventListener('click', function(){
   // re-dedupe PR (in case corrected GSTIN now collides with existing invoice)
   const groups = {};
   STATE.prLines.forEach(r=>{
-    const key = `${normGSTIN(r.gstin)}|${r.voucher_type}|${r.voucher_no||r.row_key}|${r.date}`;
+    const key = `${normGSTIN(r.gstin)}|${r.voucher_type}|${r.voucher_no||r.dedupe_ref}|${r.date}`;
     if(!groups[key]) groups[key]=[];
     groups[key].push(r);
   });
