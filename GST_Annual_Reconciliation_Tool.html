@@ -218,9 +218,10 @@ function parseOutward(wb){
     const label=row[1]; if(!label) continue;
     if(String(label).toUpperCase().indexOf("TOTAL")===0) break;
     const m=monthFromLabel(label); if(!m) continue;
-    // Columns 7/8 are Table 3.1(b) Zero-Rated (Export) Turnover/IGST — excluding them understates
-    // "As per Return" turnover against Books, which naturally includes export sales.
-    out[m]={tv:num(row[2])+num(row[7]),igst:num(row[3])+num(row[8]),cgst:num(row[4]),sgst:num(row[5])};
+    // Columns 7/8 are Table 3.1(b) Zero-Rated (Export) Turnover/IGST, and column 10 is Table
+    // 3.1(c)/(e) Nil-Rated/Exempted Turnover (no tax by definition) — excluding either understates
+    // "As per Return" turnover against Books/GSTR-1, both of which naturally include them.
+    out[m]={tv:num(row[2])+num(row[7])+num(row[10]),igst:num(row[3])+num(row[8]),cgst:num(row[4]),sgst:num(row[5])};
     rcm[m]={tv:num(row[11]),igst:num(row[12]),cgst:num(row[13]),sgst:num(row[14])};
   }
   return {out,rcm};
@@ -906,7 +907,7 @@ async function downloadExcel(c){
 
   // ---------------- Output ----------------
   const wsO = wb.addWorksheet("Output");
-  titleBlock(wsO,"Output Reconciliation — As per Return (Table 3.1(a) Taxable + 3.1(b) Zero-Rated/Export) vs As per Books");
+  titleBlock(wsO,"Output Reconciliation — As per Return (Table 3.1(a) Taxable + 3.1(b) Zero-Rated/Export + 3.1(c)/(e) Nil-Rated/Exempted) vs As per Books");
   let gr=5;
   wsO.mergeCells(gr,2,gr,5); hdr(wsO.getCell(gr,2),"As per Return",BL);
   wsO.mergeCells(gr,6,gr,9); hdr(wsO.getCell(gr,6),"As per Books",OL);
