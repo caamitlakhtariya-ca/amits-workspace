@@ -144,24 +144,18 @@
 
     <div id="manualMatchSection" style="margin-bottom:24px;">
       <h3 style="font-size:14px;margin:0 0 4px;">Manual Match Review (Optional)</h3>
-      <p class="sub">The engine already found every pair it could by GSTIN/PAN/amount. If you can see with your own eyes that an "ITC at Risk" row on the left and an "Unclaimed ITC" row on the right are really the same invoice — e.g. the GSTIN was keyed wrong in the books — select one row on each side and link them. Linked pairs move into Matched everywhere in this report (Dashboard, GSTIN Summary, Mismatch Detail, Monthly Summary, etc.) immediately, and are recorded on a separate "Manual Matches (User Confirmed)" tab for audit.</p>
-      <div class="flexrow" style="margin-bottom:8px;">
-        <input type="text" id="mmPrSearch" placeholder="Search ITC at Risk — party / invoice / GSTIN / amount" style="flex:1;min-width:220px;">
-        <input type="text" id="mmTbSearch" placeholder="Search Unclaimed ITC — party / invoice / GSTIN / amount" style="flex:1;min-width:220px;">
+      <p class="sub">The engine already found every pair it could by GSTIN/PAN/amount. If you can see with your own eyes that a books row and a 2B row are really the same invoice — e.g. the GSTIN was keyed wrong — download the sheet below (two tabs: ITC at Risk and Unclaimed ITC), type the <b>same short code</b> (e.g. M1, M2, M3…) in the "Match Group" column on <b>one row in each tab</b> for every pair you want to link, then upload it back. It's a full Excel sheet, so sort, filter and tag as many pairs as you like in one go. Linked pairs move into Matched everywhere in this report (Dashboard, GSTIN Summary, Mismatch Detail, Monthly Summary, etc.) and are recorded on a separate "Manual Matches (User Confirmed)" tab for audit.</p>
+      <div class="flexrow">
+        <button id="btnDownloadManualMatch">Download ITC at Risk + Unclaimed ITC for Manual Match</button>
+        <span class="pill" id="mmDownloadedPill" style="display:none;">Downloaded — tag Match Group, then upload below</span>
       </div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:280px;">
-          <p class="sub" style="margin:0 0 4px;"><b>ITC at Risk (Books only)</b></p>
-          <div class="tbl-scroll" style="max-height:260px;"><table id="mmPrTable"><thead><tr><th></th><th>Date</th><th>Party</th><th>GSTIN</th><th>Inv No.</th><th>TV</th><th>Tax</th></tr></thead><tbody></tbody></table></div>
-        </div>
-        <div style="flex:1;min-width:280px;">
-          <p class="sub" style="margin:0 0 4px;"><b>Unclaimed ITC (2B only)</b></p>
-          <div class="tbl-scroll" style="max-height:260px;"><table id="mmTbTable"><thead><tr><th></th><th>Date</th><th>Party</th><th>GSTIN</th><th>Inv No.</th><th>TV</th><th>Tax</th></tr></thead><tbody></tbody></table></div>
-        </div>
+      <div id="mmUploadRow" style="margin-top:14px;display:none;">
+        <input type="file" id="mmUploadInput" accept=".xlsx,.xls">
+        <div id="mmUploadErrors"></div>
       </div>
-      <div class="flexrow" style="margin-top:10px;">
-        <button id="btnLinkManualMatch" disabled>Link Selected Pair as Match</button>
-        <span class="pill" id="mmSelectionHint">Select one row on each side</span>
+      <div class="flexrow" style="margin-top:14px;">
+        <button id="btnApplyManualMatch" disabled>Apply Manual Matches</button>
+        <span class="pill" id="mmSummaryPill">0 manual matches confirmed</span>
       </div>
       <div id="mmConfirmedWrap" style="margin-top:14px;display:none;">
         <p class="sub" style="margin-bottom:6px;"><b>Confirmed manual matches</b></p>
@@ -205,7 +199,8 @@ const STATE = {
   buckets: {RCM:[], 'Import ITC':[], 'Reversal/P&L Expense':[], 'GST Cash Payment to Department':[], 'Offset - Ignore':[]},
   g2b: { b2bFinal: [], rcm: [], cdnr: [], impg: [], b2baOrphans: [] },
   match: null,
-  gstinSummary: []
+  gstinSummary: [],
+  pendingManualMatchPairs: []
 };
 const FIXED_COLS = 7; // Date,Particulars,VoucherType,VoucherNo,GSTIN,Value,GrossTotal (1-indexed 1..7)
 const HEADER_ROW = 13; // 1-indexed excel row
@@ -790,7 +785,8 @@ function parse2B(wb){
 
 /* ---------------- STEP 5: Matching engine ---------------- */
 function buildPRPool(){
-  return STATE.prLines.map(r=>({
+  return STATE.prLines.map((r,i)=>({
+    _rowKey: 'PR-'+(i+1),
     gstin: normGSTIN(r.gstin), pan: panOf(r.gstin),
     inv_raw: r.voucher_no, inv_norm: normInv(r.voucher_no || r.row_key),
     date: r.date, party: r.party,
@@ -800,15 +796,18 @@ function buildPRPool(){
 }
 function build2BPool(){
   const pool = [];
+  let n = 0;
   STATE.g2b.b2bFinal.forEach(r=>{
+    n++;
     const tv=r.tv||0, ig=r.igst||0, cg=r.cgst||0, sg=r.sgst||0;
-    pool.push({gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.invoice_no, inv_norm:normInv(r.invoice_no),
+    pool.push({_rowKey:'TB-'+n, gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.invoice_no, inv_norm:normInv(r.invoice_no),
       date: toISO(r.invoice_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg,
       eligible: eligFlag(r.eligible_itc), reason: (r.reason||'').toString().trim()});
   });
   STATE.g2b.cdnr.forEach(r=>{
+    n++;
     const tv=r.tv||0, ig=r.igst||0, cg=r.cgst||0, sg=r.sgst||0;
-    pool.push({gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.cdnr_no, inv_norm:normInv(r.cdnr_no),
+    pool.push({_rowKey:'TB-'+n, gstin:normGSTIN(r.gstin), pan:panOf(r.gstin), inv_raw:r.cdnr_no, inv_norm:normInv(r.cdnr_no),
       date: toISO(r.cdnr_dt), party:r.name, TV:tv, TAX:round2(ig+cg+sg), IV:r.value||0, I:ig,C:cg,S:sg,
       eligible: eligFlag(r.eligible_itc), reason: (r.reason||'').toString().trim()});
   });
@@ -945,87 +944,173 @@ document.getElementById('btnRunMatch').addEventListener('click', function(){
   document.getElementById('matchResults').innerHTML = html;
 
   buildGstinSummary();
-  renderManualMatchTables();
+  STATE.pendingManualMatchPairs = [];
+  renderConfirmedManualMatches();
   document.getElementById('step6').classList.remove('disabled');
 });
 
-/* ---------------- STEP 6: Manual Match Review ----------------
+/* ---------------- STEP 6: Manual Match Review (Excel round-trip) ----------------
    The 9-pass engine only links rows that agree on GSTIN/PAN (±amount tolerance). A row that is
    genuinely the same invoice but was keyed with the wrong GSTIN in the books will never be found
    automatically — but a human scanning "ITC at Risk" against "Unclaimed ITC" can often spot it on
-   sight. This lets the preparer pick one row from each remainder pool and link them; the pair is
-   moved into STATE.match.matched (so every downstream sheet — Dashboard, GSTIN Summary, Mismatch
-   Detail, Monthly Summary — picks it up automatically next time it's built) and kept in
-   STATE.match.manualMatches for its own audit-trail tab in the final workbook. */
-let mmIdSeq = 1;
-let mmPrSelectedId = null, mmTbSelectedId = null;
-function ensureMmId(r){ if(!r._mmId) r._mmId = 'mm'+(mmIdSeq++); return r._mmId; }
-function mmHay(r){ return `${r.party||''} ${r.gstin||''} ${r.inv_raw||''} ${r.TV} ${r.TAX}`.toLowerCase(); }
-
-function renderManualMatchTables(){
-  if(!STATE.match) return;
-  const prSearch = (document.getElementById('mmPrSearch').value||'').trim().toLowerCase();
-  const tbSearch = (document.getElementById('mmTbSearch').value||'').trim().toLowerCase();
-  const prRows = STATE.match.prOnlyFinal.filter(r=>!prSearch || mmHay(r).indexOf(prSearch)>-1);
-  const tbRows = STATE.match.tbOnly.filter(r=>!tbSearch || mmHay(r).indexOf(tbSearch)>-1);
-
-  function renderSide(rows, tbodySel, name, selectedId){
-    const tbody = document.querySelector(tbodySel);
-    tbody.innerHTML = '';
-    rows.slice(0,300).forEach(r=>{
-      const id = ensureMmId(r);
-      const tr = document.createElement('tr');
-      const checked = id===selectedId ? 'checked' : '';
-      tr.innerHTML = `<td><input type="radio" name="${name}" value="${id}" ${checked}></td>
-        <td>${toDisplayDate(r.date)}</td><td>${r.party||''}</td><td>${r.gstin||''}</td>
-        <td>${r.inv_raw||''}</td><td>${round2(r.TV).toLocaleString('en-IN')}</td><td>${round2(r.TAX).toLocaleString('en-IN')}</td>`;
-      tbody.appendChild(tr);
-    });
-    tbody.querySelectorAll(`input[name="${name}"]`).forEach(inp=>{
-      inp.addEventListener('change', e=>{
-        if(name==='mmPr') mmPrSelectedId = e.target.value; else mmTbSelectedId = e.target.value;
-        updateMmLinkButtonState();
+   sight. Rather than a cramped in-page picker, this exports both remainder pools to an Excel file
+   (each row carries a stable _rowKey assigned in buildPRPool/build2BPool); the preparer works in
+   Excel — sort, filter, zoom — and tags a shared "Match Group" code (e.g. M1) on one row per sheet
+   for every pair to link, then re-uploads it. Applying moves each pair into STATE.match.matched (so
+   every downstream sheet — Dashboard, GSTIN Summary, Mismatch Detail, Monthly Summary — picks it up
+   automatically next time it's built) and keeps it in STATE.match.manualMatches for its own
+   audit-trail tab in the final workbook. */
+document.getElementById('btnDownloadManualMatch').addEventListener('click', async function(){
+  const btn = this;
+  const errBox = document.getElementById('mmUploadErrors');
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = 'Building file…';
+  try {
+    const wb = new ExcelJS.Workbook();
+    const moneyFmt = '#,##0.00;(#,##0.00);"-"';
+    function buildSide(sheetName, rows){
+      const ws = wb.addWorksheet(sheetName);
+      ws.addRow([`${sheetName} — tag the "Match Group" column to link a row here with a row on the other sheet`]);
+      ws.addRow(['To link a books row with a 2B row that is really the same invoice (e.g. GSTIN was keyed wrong), type the SAME short code (e.g. M1, M2, M3…) in the Match Group column on BOTH sheets — one row here, one row on the other sheet, per pair. Leave blank for rows you are not manually matching. Do NOT edit Row Key.']);
+      ws.addRow([]);
+      const hdr = ws.addRow(['Row Key (do not edit)','Date','Party','GSTIN','Invoice No.','TV','Tax','Match Group (fill in)']);
+      hdr.eachCell(cell=>{ cell.font={bold:true,color:{argb:'FFFFFFFF'}}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFC00000'}}; cell.alignment={horizontal:'center',wrapText:true}; });
+      rows.forEach(r=>{
+        const row = ws.addRow([r._rowKey, null, r.party, r.gstin, r.inv_raw, r.TV, r.TAX, '']);
+        if(r.date){ const [y,m,d]=r.date.split('-').map(Number); row.getCell(2).value = new Date(Date.UTC(y,m-1,d)); row.getCell(2).numFmt='dd-mm-yyyy'; }
+        [6,7].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+        row.getCell(1).font = {size:8, color:{argb:'FF888888'}};
       });
-    });
+      ws.columns = [{width:14},{width:12},{width:26},{width:17},{width:18},{width:13},{width:13},{width:18}];
+    }
+    buildSide('ITC at Risk (Books)', STATE.match.prOnlyFinal);
+    buildSide('Unclaimed ITC (2B)', STATE.match.tbOnly);
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'Manual_Match_Review.xlsx';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    document.getElementById('mmDownloadedPill').style.display = 'inline-block';
+    document.getElementById('mmUploadRow').style.display = 'block';
+    btn.textContent = origText;
+    btn.disabled = false;
+  } catch(err){
+    btn.textContent = origText;
+    btn.disabled = false;
+    errBox.innerHTML = `<div class="errbox">Download failed: ${err.message}. Check your browser isn't blocking downloads/popups for this page, then try again.</div>`;
+    console.error('Manual Match download failed:', err);
   }
-  renderSide(prRows, '#mmPrTable tbody', 'mmPr', mmPrSelectedId);
-  renderSide(tbRows, '#mmTbTable tbody', 'mmTb', mmTbSelectedId);
-  updateMmLinkButtonState();
+});
+
+document.getElementById('mmUploadInput').addEventListener('change', function(e){
+  const f = e.target.files[0];
+  if(!f) return;
+  const errBox = document.getElementById('mmUploadErrors');
+  errBox.innerHTML = '';
+  document.getElementById('btnApplyManualMatch').disabled = true;
+  STATE.pendingManualMatchPairs = [];
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const data = new Uint8Array(ev.target.result);
+    const wb = XLSX.read(data, {type:'array', cellNF:true});
+    const prSheet = wb.Sheets['ITC at Risk (Books)'];
+    const tbSheet = wb.Sheets['Unclaimed ITC (2B)'];
+    if(!prSheet || !tbSheet){
+      errBox.innerHTML = `<div class="errbox">This doesn't look like the Manual Match Review file — expected sheets named "ITC at Risk (Books)" and "Unclaimed ITC (2B)". Please re-download and don't rename the sheets.</div>`;
+      return;
+    }
+    function readGroups(ws){
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      const out = {};
+      for(let r=5; r<=range.e.r+1; r++){
+        const rowKey = cellVal(ws,r,1);
+        if(!rowKey) continue;
+        const group = cellVal(ws,r,8);
+        if(group===undefined || group===null || String(group).trim()==='') continue;
+        const g = String(group).trim();
+        if(!out[g]) out[g]=[];
+        out[g].push(String(rowKey).trim());
+      }
+      return out;
+    }
+    const prGroups = readGroups(prSheet);
+    const tbGroups = readGroups(tbSheet);
+    const allGroups = new Set([...Object.keys(prGroups), ...Object.keys(tbGroups)]);
+
+    const errorsList = [];
+    const pairs = [];
+    allGroups.forEach(g=>{
+      const prKeys = prGroups[g]||[];
+      const tbKeys = tbGroups[g]||[];
+      if(prKeys.length===0 || tbKeys.length===0){
+        errorsList.push(`Match Group "${g}": needs one row tagged on each sheet (found ${prKeys.length} on ITC at Risk, ${tbKeys.length} on Unclaimed ITC).`);
+        return;
+      }
+      if(prKeys.length>1 || tbKeys.length>1){
+        errorsList.push(`Match Group "${g}": each group must have exactly one row per sheet (found ${prKeys.length} on ITC at Risk, ${tbKeys.length} on Unclaimed ITC) — use a different group code for each pair.`);
+        return;
+      }
+      pairs.push({group:g, prKey:prKeys[0], tbKey:tbKeys[0]});
+    });
+
+    if(errorsList.length>0){
+      errBox.innerHTML = `<div class="errbox">${errorsList.map(e=>`• ${e}`).join('<br>')}</div>`;
+      return;
+    }
+    if(pairs.length===0){
+      errBox.innerHTML = `<div class="errbox">No Match Group codes found — tag at least one pair (same code on both sheets) before uploading, or skip this step if you have nothing to manually match.</div>`;
+      return;
+    }
+
+    STATE.pendingManualMatchPairs = pairs;
+    document.getElementById('btnApplyManualMatch').disabled = false;
+    errBox.innerHTML = `<div class="infobox">${pairs.length} manual match pair(s) ready — click "Apply Manual Matches" to confirm.</div>`;
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+document.getElementById('btnApplyManualMatch').addEventListener('click', function(){
+  const errBox = document.getElementById('mmUploadErrors');
+  const pairs = STATE.pendingManualMatchPairs||[];
+  const notFound = [];
+  pairs.forEach(({group, prKey, tbKey})=>{
+    const prIdx = STATE.match.prOnlyFinal.findIndex(r=>r._rowKey===prKey);
+    const tbIdx = STATE.match.tbOnly.findIndex(r=>r._rowKey===tbKey);
+    if(prIdx===-1 || tbIdx===-1){ notFound.push(group); return; }
+    const pr = STATE.match.prOnlyFinal[prIdx];
+    const tb = STATE.match.tbOnly[tbIdx];
+    const notes = [];
+    if(normGSTIN(pr.gstin)!==normGSTIN(tb.gstin)) notes.push(`GSTIN differs (Books: ${pr.gstin||'(blank)'} vs 2B: ${tb.gstin||'(blank)'})`);
+    if((pr.inv_norm||'')!==(tb.inv_norm||'')) notes.push(`Invoice No. differs (Books: ${pr.inv_raw||''} vs 2B: ${tb.inv_raw||''})`);
+    if(!notes.length) notes.push('User-confirmed match');
+    STATE.match.prOnlyFinal.splice(prIdx,1);
+    STATE.match.tbOnly.splice(tbIdx,1);
+    const pairObj = {pr, tb, pass:'Manual Match (User Confirmed)', note: notes.join('; '), group};
+    STATE.match.matched.push(pairObj);
+    STATE.match.manualMatches.push(pairObj);
+  });
+  STATE.pendingManualMatchPairs = [];
+  document.getElementById('btnApplyManualMatch').disabled = true;
+  document.getElementById('mmUploadInput').value = '';
+  if(notFound.length>0){
+    errBox.innerHTML = `<div class="errbox">${notFound.length} group(s) could not be applied — rows already matched/consumed, or this file is from an older "Run Matching" run. Re-download a fresh sheet and retry for: ${notFound.join(', ')}</div>`;
+  } else {
+    errBox.innerHTML = `<div class="infobox">${pairs.length} manual match(es) applied.</div>`;
+  }
   renderConfirmedManualMatches();
-}
-function updateMmLinkButtonState(){
-  const btn = document.getElementById('btnLinkManualMatch');
-  const hint = document.getElementById('mmSelectionHint');
-  if(mmPrSelectedId && mmTbSelectedId){ btn.disabled=false; hint.textContent='Ready to link'; }
-  else { btn.disabled=true; hint.textContent='Select one row on each side'; }
-}
-document.getElementById('mmPrSearch').addEventListener('input', renderManualMatchTables);
-document.getElementById('mmTbSearch').addEventListener('input', renderManualMatchTables);
-document.getElementById('btnLinkManualMatch').addEventListener('click', function(){
-  const prIdx = STATE.match.prOnlyFinal.findIndex(r=>r._mmId===mmPrSelectedId);
-  const tbIdx = STATE.match.tbOnly.findIndex(r=>r._mmId===mmTbSelectedId);
-  if(prIdx===-1 || tbIdx===-1) return;
-  const pr = STATE.match.prOnlyFinal[prIdx];
-  const tb = STATE.match.tbOnly[tbIdx];
-  const notes = [];
-  if(normGSTIN(pr.gstin)!==normGSTIN(tb.gstin)) notes.push(`GSTIN differs (Books: ${pr.gstin||'(blank)'} vs 2B: ${tb.gstin||'(blank)'})`);
-  if((pr.inv_norm||'')!==(tb.inv_norm||'')) notes.push(`Invoice No. differs (Books: ${pr.inv_raw||''} vs 2B: ${tb.inv_raw||''})`);
-  if(!notes.length) notes.push('User-confirmed match');
-
-  STATE.match.prOnlyFinal.splice(prIdx,1);
-  STATE.match.tbOnly.splice(tbIdx,1);
-  const pair = {pr, tb, pass:'Manual Match (User Confirmed)', note: notes.join('; ')};
-  STATE.match.matched.push(pair);
-  STATE.match.manualMatches.push(pair);
-
-  mmPrSelectedId = null; mmTbSelectedId = null;
-  renderManualMatchTables();
   buildGstinSummary();
 });
+
 function renderConfirmedManualMatches(){
   const wrap = document.getElementById('mmConfirmedWrap');
   const tbody = document.querySelector('#mmConfirmedTable tbody');
-  const list = STATE.match.manualMatches||[];
+  const list = (STATE.match && STATE.match.manualMatches) || [];
+  document.getElementById('mmSummaryPill').textContent = list.length + ' manual match' + (list.length===1?'':'es') + ' confirmed';
   if(!list.length){ wrap.style.display='none'; return; }
   wrap.style.display='block';
   tbody.innerHTML='';
@@ -1049,7 +1134,7 @@ function unlinkManualMatch(i){
   if(mi>-1) STATE.match.matched.splice(mi,1);
   STATE.match.prOnlyFinal.push(m.pr);
   STATE.match.tbOnly.push(m.tb);
-  renderManualMatchTables();
+  renderConfirmedManualMatches();
   buildGstinSummary();
 }
 
@@ -1483,15 +1568,15 @@ document.getElementById('btnDownload').addEventListener('click', async function(
   function addManualMatchSheet(name, title, subtitle, pairs){
     const ws = wb.addWorksheet(name);
     ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
-    const hdr = ws.addRow(['Date (PR)','PR Party','PR GSTIN','PR Inv No.','PR TV','PR Tax','2B Party','2B GSTIN','2B Inv No.','2B TV','2B Tax','Tax Diff','Why flagged (not an automatic match)']);
+    const hdr = ws.addRow(['Match Group','Date (PR)','PR Party','PR GSTIN','PR Inv No.','PR TV','PR Tax','2B Party','2B GSTIN','2B Inv No.','2B TV','2B Tax','Tax Diff','Why flagged (not an automatic match)']);
     styleHeader(ws, hdr.number);
     pairs.forEach(m=>{
-      const row = ws.addRow(['', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.pr.TV, m.pr.TAX, m.tb.party, m.tb.gstin, m.tb.inv_raw, m.tb.TV, m.tb.TAX, round2(m.pr.TAX-m.tb.TAX), m.note||'']);
-      addDateCell(row,1,m.pr.date);
-      [5,6,10,11,12].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+      const row = ws.addRow([m.group||'', '', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.pr.TV, m.pr.TAX, m.tb.party, m.tb.gstin, m.tb.inv_raw, m.tb.TV, m.tb.TAX, round2(m.pr.TAX-m.tb.TAX), m.note||'']);
+      addDateCell(row,2,m.pr.date);
+      [6,7,11,12,13].forEach(c=>row.getCell(c).numFmt=moneyFmt);
       row.eachCell(cell=>{ cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF4CE'}}; });
     });
-    ws.columns = [{width:13},{width:24},{width:17},{width:16},{width:12},{width:12},{width:24},{width:17},{width:16},{width:12},{width:12},{width:11},{width:46}];
+    ws.columns = [{width:12},{width:13},{width:24},{width:17},{width:16},{width:12},{width:12},{width:24},{width:17},{width:16},{width:12},{width:12},{width:11},{width:46}];
   }
   function addMatchPairSheet(name, title, subtitle, pairs){
     const ws = wb.addWorksheet(name);
