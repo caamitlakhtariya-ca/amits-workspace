@@ -141,6 +141,34 @@
   <!-- STEP 6: GSTIN Summary + Download -->
   <div class="card disabled" id="step6">
     <h2><span class="step-num">6</span> GSTIN-wise Summary &amp; Final Download</h2>
+
+    <div id="manualMatchSection" style="margin-bottom:24px;">
+      <h3 style="font-size:14px;margin:0 0 4px;">Manual Match Review (Optional)</h3>
+      <p class="sub">The engine already found every pair it could by GSTIN/PAN/amount. If you can see with your own eyes that an "ITC at Risk" row on the left and an "Unclaimed ITC" row on the right are really the same invoice — e.g. the GSTIN was keyed wrong in the books — select one row on each side and link them. Linked pairs move into Matched everywhere in this report (Dashboard, GSTIN Summary, Mismatch Detail, Monthly Summary, etc.) immediately, and are recorded on a separate "Manual Matches (User Confirmed)" tab for audit.</p>
+      <div class="flexrow" style="margin-bottom:8px;">
+        <input type="text" id="mmPrSearch" placeholder="Search ITC at Risk — party / invoice / GSTIN / amount" style="flex:1;min-width:220px;">
+        <input type="text" id="mmTbSearch" placeholder="Search Unclaimed ITC — party / invoice / GSTIN / amount" style="flex:1;min-width:220px;">
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:280px;">
+          <p class="sub" style="margin:0 0 4px;"><b>ITC at Risk (Books only)</b></p>
+          <div class="tbl-scroll" style="max-height:260px;"><table id="mmPrTable"><thead><tr><th></th><th>Date</th><th>Party</th><th>GSTIN</th><th>Inv No.</th><th>TV</th><th>Tax</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div style="flex:1;min-width:280px;">
+          <p class="sub" style="margin:0 0 4px;"><b>Unclaimed ITC (2B only)</b></p>
+          <div class="tbl-scroll" style="max-height:260px;"><table id="mmTbTable"><thead><tr><th></th><th>Date</th><th>Party</th><th>GSTIN</th><th>Inv No.</th><th>TV</th><th>Tax</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+      <div class="flexrow" style="margin-top:10px;">
+        <button id="btnLinkManualMatch" disabled>Link Selected Pair as Match</button>
+        <span class="pill" id="mmSelectionHint">Select one row on each side</span>
+      </div>
+      <div id="mmConfirmedWrap" style="margin-top:14px;display:none;">
+        <p class="sub" style="margin-bottom:6px;"><b>Confirmed manual matches</b></p>
+        <div class="tbl-scroll" style="max-height:220px;"><table id="mmConfirmedTable"><thead><tr><th>Date</th><th>PR Party / GSTIN / Inv</th><th>2B Party / GSTIN / Inv</th><th>Tax Diff</th><th>Why flagged</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
     <div id="gstinSummaryPreview"></div>
     <div style="margin-top:16px;">
       <button id="btnDownload">Download Final Consolidated Workbook</button>
@@ -899,7 +927,8 @@ document.getElementById('btnRunMatch').addEventListener('click', function(){
   STATE.match = {
     matched: main.matched, tbOnly: main.tbOnly, passCounts: main.passCounts,
     rcmMatched: rcmCross.matched, prOnlyFinal: rcmCross.prOnly, rcm2bUnmatched: rcmCross.tbOnly,
-    rcmPassCounts: rcmCross.passCounts
+    rcmPassCounts: rcmCross.passCounts,
+    manualMatches: []
   };
 
   const rows = [
@@ -916,8 +945,113 @@ document.getElementById('btnRunMatch').addEventListener('click', function(){
   document.getElementById('matchResults').innerHTML = html;
 
   buildGstinSummary();
+  renderManualMatchTables();
   document.getElementById('step6').classList.remove('disabled');
 });
+
+/* ---------------- STEP 6: Manual Match Review ----------------
+   The 9-pass engine only links rows that agree on GSTIN/PAN (±amount tolerance). A row that is
+   genuinely the same invoice but was keyed with the wrong GSTIN in the books will never be found
+   automatically — but a human scanning "ITC at Risk" against "Unclaimed ITC" can often spot it on
+   sight. This lets the preparer pick one row from each remainder pool and link them; the pair is
+   moved into STATE.match.matched (so every downstream sheet — Dashboard, GSTIN Summary, Mismatch
+   Detail, Monthly Summary — picks it up automatically next time it's built) and kept in
+   STATE.match.manualMatches for its own audit-trail tab in the final workbook. */
+let mmIdSeq = 1;
+let mmPrSelectedId = null, mmTbSelectedId = null;
+function ensureMmId(r){ if(!r._mmId) r._mmId = 'mm'+(mmIdSeq++); return r._mmId; }
+function mmHay(r){ return `${r.party||''} ${r.gstin||''} ${r.inv_raw||''} ${r.TV} ${r.TAX}`.toLowerCase(); }
+
+function renderManualMatchTables(){
+  if(!STATE.match) return;
+  const prSearch = (document.getElementById('mmPrSearch').value||'').trim().toLowerCase();
+  const tbSearch = (document.getElementById('mmTbSearch').value||'').trim().toLowerCase();
+  const prRows = STATE.match.prOnlyFinal.filter(r=>!prSearch || mmHay(r).indexOf(prSearch)>-1);
+  const tbRows = STATE.match.tbOnly.filter(r=>!tbSearch || mmHay(r).indexOf(tbSearch)>-1);
+
+  function renderSide(rows, tbodySel, name, selectedId){
+    const tbody = document.querySelector(tbodySel);
+    tbody.innerHTML = '';
+    rows.slice(0,300).forEach(r=>{
+      const id = ensureMmId(r);
+      const tr = document.createElement('tr');
+      const checked = id===selectedId ? 'checked' : '';
+      tr.innerHTML = `<td><input type="radio" name="${name}" value="${id}" ${checked}></td>
+        <td>${toDisplayDate(r.date)}</td><td>${r.party||''}</td><td>${r.gstin||''}</td>
+        <td>${r.inv_raw||''}</td><td>${round2(r.TV).toLocaleString('en-IN')}</td><td>${round2(r.TAX).toLocaleString('en-IN')}</td>`;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll(`input[name="${name}"]`).forEach(inp=>{
+      inp.addEventListener('change', e=>{
+        if(name==='mmPr') mmPrSelectedId = e.target.value; else mmTbSelectedId = e.target.value;
+        updateMmLinkButtonState();
+      });
+    });
+  }
+  renderSide(prRows, '#mmPrTable tbody', 'mmPr', mmPrSelectedId);
+  renderSide(tbRows, '#mmTbTable tbody', 'mmTb', mmTbSelectedId);
+  updateMmLinkButtonState();
+  renderConfirmedManualMatches();
+}
+function updateMmLinkButtonState(){
+  const btn = document.getElementById('btnLinkManualMatch');
+  const hint = document.getElementById('mmSelectionHint');
+  if(mmPrSelectedId && mmTbSelectedId){ btn.disabled=false; hint.textContent='Ready to link'; }
+  else { btn.disabled=true; hint.textContent='Select one row on each side'; }
+}
+document.getElementById('mmPrSearch').addEventListener('input', renderManualMatchTables);
+document.getElementById('mmTbSearch').addEventListener('input', renderManualMatchTables);
+document.getElementById('btnLinkManualMatch').addEventListener('click', function(){
+  const prIdx = STATE.match.prOnlyFinal.findIndex(r=>r._mmId===mmPrSelectedId);
+  const tbIdx = STATE.match.tbOnly.findIndex(r=>r._mmId===mmTbSelectedId);
+  if(prIdx===-1 || tbIdx===-1) return;
+  const pr = STATE.match.prOnlyFinal[prIdx];
+  const tb = STATE.match.tbOnly[tbIdx];
+  const notes = [];
+  if(normGSTIN(pr.gstin)!==normGSTIN(tb.gstin)) notes.push(`GSTIN differs (Books: ${pr.gstin||'(blank)'} vs 2B: ${tb.gstin||'(blank)'})`);
+  if((pr.inv_norm||'')!==(tb.inv_norm||'')) notes.push(`Invoice No. differs (Books: ${pr.inv_raw||''} vs 2B: ${tb.inv_raw||''})`);
+  if(!notes.length) notes.push('User-confirmed match');
+
+  STATE.match.prOnlyFinal.splice(prIdx,1);
+  STATE.match.tbOnly.splice(tbIdx,1);
+  const pair = {pr, tb, pass:'Manual Match (User Confirmed)', note: notes.join('; ')};
+  STATE.match.matched.push(pair);
+  STATE.match.manualMatches.push(pair);
+
+  mmPrSelectedId = null; mmTbSelectedId = null;
+  renderManualMatchTables();
+  buildGstinSummary();
+});
+function renderConfirmedManualMatches(){
+  const wrap = document.getElementById('mmConfirmedWrap');
+  const tbody = document.querySelector('#mmConfirmedTable tbody');
+  const list = STATE.match.manualMatches||[];
+  if(!list.length){ wrap.style.display='none'; return; }
+  wrap.style.display='block';
+  tbody.innerHTML='';
+  list.forEach((m,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${toDisplayDate(m.pr.date)}</td>
+      <td>${m.pr.party||''}<br><span class="sub" style="margin:0;">${m.pr.gstin||''} · ${m.pr.inv_raw||''}</span></td>
+      <td>${m.tb.party||''}<br><span class="sub" style="margin:0;">${m.tb.gstin||''} · ${m.tb.inv_raw||''}</span></td>
+      <td>${round2(m.pr.TAX-m.tb.TAX).toLocaleString('en-IN')}</td>
+      <td style="font-size:11.5px;">${m.note}</td>
+      <td><button class="secondary" onclick="unlinkManualMatch(${i})">Unlink</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+function unlinkManualMatch(i){
+  const list = STATE.match.manualMatches;
+  const m = list[i];
+  if(!m) return;
+  list.splice(i,1);
+  const mi = STATE.match.matched.indexOf(m);
+  if(mi>-1) STATE.match.matched.splice(mi,1);
+  STATE.match.prOnlyFinal.push(m.pr);
+  STATE.match.tbOnly.push(m.tb);
+  renderManualMatchTables();
+  buildGstinSummary();
+}
 
 /* ---------------- STEP 6: GSTIN Summary (unmatched only) ---------------- */
 function buildGstinSummary(){
@@ -1041,6 +1175,7 @@ document.getElementById('btnDownload').addEventListener('click', async function(
       {label:'UNCLAIMED ITC (2B ONLY)', val:String(STATE.match.tbOnly.length), color: STATE.match.tbOnly.length ? RED : GREEN},
       {label:'RCM NOT BOOKED', val:String(STATE.match.rcm2bUnmatched.length), color: STATE.match.rcm2bUnmatched.length ? GOLD : GREEN},
       {label:'DUPLICATE VOUCHERS (BOOKS)', val:String(duplicateVouchers.length), color: duplicateVouchers.length ? GOLD : GREEN},
+      {label:'MANUAL MATCHES CONFIRMED', val:String((STATE.match.manualMatches||[]).length), color: (STATE.match.manualMatches||[]).length ? GOLD : GREEN},
     ];
     let col = 2;
     cards.forEach(card=>{
@@ -1345,6 +1480,19 @@ document.getElementById('btnDownload').addEventListener('click', async function(
       ? [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12},{width:14},{width:34},{width:26},{width:44}]
       : [{width:13},{width:26},{width:17},{width:18},{width:12},{width:11},{width:11},{width:11},{width:12},{width:44}];
   }
+  function addManualMatchSheet(name, title, subtitle, pairs){
+    const ws = wb.addWorksheet(name);
+    ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
+    const hdr = ws.addRow(['Date (PR)','PR Party','PR GSTIN','PR Inv No.','PR TV','PR Tax','2B Party','2B GSTIN','2B Inv No.','2B TV','2B Tax','Tax Diff','Why flagged (not an automatic match)']);
+    styleHeader(ws, hdr.number);
+    pairs.forEach(m=>{
+      const row = ws.addRow(['', m.pr.party, m.pr.gstin, m.pr.inv_raw, m.pr.TV, m.pr.TAX, m.tb.party, m.tb.gstin, m.tb.inv_raw, m.tb.TV, m.tb.TAX, round2(m.pr.TAX-m.tb.TAX), m.note||'']);
+      addDateCell(row,1,m.pr.date);
+      [5,6,10,11,12].forEach(c=>row.getCell(c).numFmt=moneyFmt);
+      row.eachCell(cell=>{ cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF4CE'}}; });
+    });
+    ws.columns = [{width:13},{width:24},{width:17},{width:16},{width:12},{width:12},{width:24},{width:17},{width:16},{width:12},{width:12},{width:11},{width:46}];
+  }
   function addMatchPairSheet(name, title, subtitle, pairs){
     const ws = wb.addWorksheet(name);
     ws.addRow([title]); ws.addRow([subtitle]); ws.addRow([]);
@@ -1464,6 +1612,7 @@ document.getElementById('btnDownload').addEventListener('click', async function(
   }
 
   // Sheets of concern — placed right after the Dashboard / Monthly Summary
+  addManualMatchSheet('Manual Matches (User Confirmed)','Manual Matches — User Confirmed','Pairs the preparer linked by eye in Step 6 because they are visibly the same invoice (e.g. wrong GSTIN keyed in books) though the engine could not match them automatically on GSTIN/PAN/amount. These are now counted as Matched everywhere else in this report — review the "Why flagged" column before relying on them.', STATE.match.manualMatches||[]);
   addMatchPairSheet('Ineligible ITC (Claimed)','Ineligible ITC — Claimed in Books','GSTR-2B marks these ineligible (IS ELIGIBLE ITC = N) but they are booked/matched in the Purchase Register — this ITC must be reversed.', ineligibleClaimed);
   addSoloSheet('ITC at Risk (PR Only)','ITC at Risk','In PR, not in 2B (post RCM cross-match)', STATE.match.prOnlyFinal);
   addSoloSheet('Unclaimed ITC (2B Only)','Unclaimed ITC','In 2B, not in PR — rows marked Ineligible below need no follow-up', STATE.match.tbOnly, true);
